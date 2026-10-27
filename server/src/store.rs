@@ -14,26 +14,14 @@ use sqlx::SqlitePool;
 
 use crate::error::ApiError;
 use crate::image_type::ImageType;
+use crate::path;
 use crate::path_template::{Template, UploadFacts};
 use crate::state::AppState;
-
-/// Leading parts of the address space that can never be a Path, because the
-/// admin area and the API live there. `admin` alone is reserved too: it
-/// redirects to `admin/`.
-pub const RESERVED_PREFIXES: [&str; 2] = ["admin", "api"];
 
 /// How often a Path Template is rendered again after a collision or a
 /// Reserved Prefix hit before the upload fails. Only a template with almost
 /// no randomness left (e.g. `{random:1}` after 62 uploads) gets near this.
 const MAX_PATH_DRAWS: usize = 1000;
-
-/// Whether `path` (without a leading `/`) falls under a Reserved Prefix.
-pub fn is_reserved(path: &str) -> bool {
-    RESERVED_PREFIXES.iter().any(|prefix| {
-        path.strip_prefix(prefix)
-            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
-    })
-}
 
 /// Where the file with this hash is stored.
 pub fn file_path(data_dir: &Path, sha256: &str) -> PathBuf {
@@ -190,7 +178,7 @@ async fn insert_image(
     let template = state.path_template.as_ref();
     for _ in 0..MAX_PATH_DRAWS {
         let candidate = template.render(facts, state.random.as_ref());
-        if is_reserved(&candidate) {
+        if path::is_reserved(&candidate) {
             continue;
         }
         let inserted = sqlx::query!(
@@ -263,6 +251,111 @@ pub async fn find_by_id(db: &SqlitePool, id: i64) -> Result<Option<Image>, ApiEr
         trashed_at: row.trashed_at,
         paths,
     }))
+}
+
+/// Adds a Path (already checked with [`path::parse`]) to an Image. It
+/// serves the Image at once; the Image's other Paths are untouched.
+///
+/// A Path belongs to at most one Image: one held by any Image, trashed
+/// Images included, is refused as taken.
+pub async fn add_path(
+    db: &SqlitePool,
+    image_id: i64,
+    new_path: &str,
+    now: i64,
+) -> Result<Image, ApiError> {
+    if find_by_id(db, image_id).await?.is_none() {
+        return Err(ApiError::NotFound);
+    }
+    let inserted = sqlx::query!(
+        "INSERT INTO paths (path, image_id, is_primary, created_at) VALUES (?, ?, 0, ?)
+         ON CONFLICT (path) DO NOTHING",
+        new_path,
+        image_id,
+        now,
+    )
+    .execute(db)
+    .await?
+    .rows_affected();
+    if inserted == 0 {
+        let holder = sqlx::query_scalar!("SELECT image_id FROM paths WHERE path = ?", new_path)
+            .fetch_optional(db)
+            .await?;
+        return Err(ApiError::PathTaken {
+            path: new_path.to_owned(),
+            by_this_image: holder == Some(image_id),
+        });
+    }
+    find_by_id(db, image_id).await?.ok_or(ApiError::NotFound)
+}
+
+/// Removes one of an Image's Paths; it is free for any Image at once.
+///
+/// An Image always keeps at least one Path, so removing the last one is
+/// refused. Removing the Primary Path makes the oldest remaining Path
+/// Primary.
+pub async fn remove_path(db: &SqlitePool, image_id: i64, path: &str) -> Result<Image, ApiError> {
+    // Write first, so the transaction holds the write lock before it reads.
+    let mut tx = db.begin().await?;
+    let removed = sqlx::query_scalar!(
+        r#"DELETE FROM paths WHERE image_id = ? AND path = ?
+           RETURNING is_primary AS "is_primary: bool""#,
+        image_id,
+        path,
+    )
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some(was_primary) = removed else {
+        return Err(ApiError::NotFound);
+    };
+    let left = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "n!: i64" FROM paths WHERE image_id = ?"#,
+        image_id
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+    if left == 0 {
+        // Dropping `tx` rolls the delete back.
+        return Err(ApiError::LastPath(path.to_owned()));
+    }
+    if was_primary {
+        sqlx::query!(
+            "UPDATE paths SET is_primary = 1
+             WHERE id = (SELECT id FROM paths WHERE image_id = ? ORDER BY id LIMIT 1)",
+            image_id
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+    tx.commit().await?;
+    find_by_id(db, image_id).await?.ok_or(ApiError::NotFound)
+}
+
+/// Makes one of an Image's Paths its Primary Path (the only one).
+pub async fn set_primary(db: &SqlitePool, image_id: i64, path: &str) -> Result<Image, ApiError> {
+    let mut tx = db.begin().await?;
+    // Clear the old marker first: at most one Primary per Image is enforced
+    // by a unique index.
+    sqlx::query!(
+        "UPDATE paths SET is_primary = 0 WHERE image_id = ? AND is_primary = 1 AND path <> ?",
+        image_id,
+        path,
+    )
+    .execute(&mut *tx)
+    .await?;
+    let updated = sqlx::query!(
+        "UPDATE paths SET is_primary = 1 WHERE image_id = ? AND path = ?",
+        image_id,
+        path,
+    )
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if updated == 0 {
+        return Err(ApiError::NotFound);
+    }
+    tx.commit().await?;
+    find_by_id(db, image_id).await?.ok_or(ApiError::NotFound)
 }
 
 /// One page of the Library: live (not trashed) Images, newest first.
@@ -448,16 +541,6 @@ async fn write_file(data_dir: &Path, sha256: &str, bytes: Vec<u8>) -> anyhow::Re
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn reserved_prefixes() {
-        for p in ["admin", "admin/", "admin/x.png", "api", "api/v1/info"] {
-            assert!(is_reserved(p), "{p}");
-        }
-        for p in ["administrator.png", "apix", "x/admin/y", "Admin/x", "a.png"] {
-            assert!(!is_reserved(p), "{p}");
-        }
-    }
 
     #[test]
     fn like_patterns_escape_wildcards() {

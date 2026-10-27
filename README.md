@@ -87,6 +87,26 @@ API (Owner session): `GET /api/v1/images?page=1&per_page=60&q=text` returns
 `GET /api/v1/images/{id}` returns one Image with all its Paths. `GET
 /api/v1/info` also carries `image_count` and `disk_usage` for the Owner.
 
+## Paths
+
+In an Image's detail view the Owner can add a Path (e.g. `cat.png`), remove
+one (after an in-page confirmation) or make any Path Primary. Every Path serves
+the Image directly; a removed Path answers 404 and is free for any Image at
+once. An added Path may use letters and digits of any script and `- _ . ~ /`
+(at most 255 characters, no leading/trailing or double `/`, no `.`/`..`
+segments, nothing under `admin/` or `api/`); percent-encoded input is decoded.
+
+API (Owner session), each answering the updated Image:
+
+- `POST /api/v1/images/{id}/paths` with `{"path": "cat.png"}` (201). Errors:
+  400 `invalid_path`, 400 `reserved_path`, 409 `path_taken`.
+- `DELETE /api/v1/images/{id}/paths/{path}` (the Path percent-encoded as in
+  its URL). 409 `last_path` for the Image's only Path. Removing the Primary
+  Path makes the oldest remaining Path Primary.
+- `PUT /api/v1/images/{id}/primary` with `{"path": "cat.png"}`.
+
+A Path that is not one of the Image's answers 404.
+
 ## Password
 
 `img-bed set-password` sets or changes the Owner's password (minimum 8

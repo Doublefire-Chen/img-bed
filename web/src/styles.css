@@ -546,3 +546,96 @@ a:focus-visible {
 .detail-paths .path-links li.path-primary {
   border-left-color: var(--accent);
 }
+
+/* Path management */
+
+.path-row-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.path-row-header .result-path {
+  margin: 0;
+  min-width: 0;
+}
+
+.path-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.button-danger {
+  color: var(--danger);
+}
+
+.button-danger-solid {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--surface);
+  font-weight: 600;
+}
+
+.confirm {
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border));
+  border-radius: var(--radius);
+  padding: 0.5rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.confirm p {
+  margin: 0;
+}
+
+.add-path {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.9rem;
+}
+
+.add-path p {
+  margin: 0;
+}
+
+.add-path-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.path-input {
+  flex: 1;
+  min-width: 12rem;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.path-input:focus-within {
+  border-color: var(--accent);
+}
+
+.path-input input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 0.3rem 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+}
+
+.path-input:has(input[aria-invalid="true"]) {
+  border-color: var(--danger);
+}

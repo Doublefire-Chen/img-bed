@@ -14,6 +14,7 @@ pub mod db;
 pub mod error;
 pub mod frontend;
 pub mod image_type;
+pub mod path;
 pub mod path_template;
 pub mod random;
 pub mod serve;

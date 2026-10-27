@@ -1,8 +1,9 @@
-//! `api/v1/images`: uploading Images, the Library list and Image detail.
+//! `api/v1/images`: uploading Images, the Library list, Image detail and
+//! Path management.
 
 use axum::Json;
 use axum::extract::multipart::{Multipart, MultipartError, MultipartRejection};
-use axum::extract::rejection::QueryRejection;
+use axum::extract::rejection::{JsonRejection, QueryRejection};
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -11,6 +12,7 @@ use serde_json::json;
 
 use crate::auth::Owner;
 use crate::error::ApiError;
+use crate::path;
 use crate::serve::url_for;
 use crate::state::AppState;
 use crate::store::{self, Image};
@@ -277,9 +279,74 @@ pub async fn detail(
     _owner: Owner,
     Path(id): Path<String>,
 ) -> Result<Json<ImageView>, ApiError> {
-    let id: i64 = id.parse().map_err(|_| ApiError::NotFound)?;
+    let id = image_id(&id)?;
     let image = store::find_by_id(&state.db, id)
         .await?
         .ok_or(ApiError::NotFound)?;
+    Ok(Json(ImageView::new(image, &state.config.public_url)))
+}
+
+/// An Image id from the URL; anything but a number is an unknown Image.
+fn image_id(id: &str) -> Result<i64, ApiError> {
+    id.parse().map_err(|_| ApiError::NotFound)
+}
+
+#[derive(Deserialize)]
+pub struct PathRequest {
+    /// The Path without the leading `/`. Percent-encoded input is decoded.
+    pub path: String,
+}
+
+fn path_request(body: Result<Json<PathRequest>, JsonRejection>) -> Result<String, ApiError> {
+    body.map(|Json(req)| req.path)
+        .map_err(|e| ApiError::BadRequest(e.body_text()))
+}
+
+/// `POST /api/v1/images/{id}/paths` with `{"path": "cat.png"}`: adds a Path
+/// to the Image. Answers 201 with the updated Image; 400 `invalid_path` or
+/// `reserved_path` for a Path that breaks the rules, 409 `path_taken` when
+/// the Path already belongs to an Image.
+pub async fn add_path(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<String>,
+    body: Result<Json<PathRequest>, JsonRejection>,
+) -> Result<(StatusCode, Json<ImageView>), ApiError> {
+    let id = image_id(&id)?;
+    let new_path = path::parse(&path_request(body)?)?;
+    let now = state.now().unix_timestamp();
+    let image = store::add_path(&state.db, id, &new_path, now).await?;
+    Ok((
+        StatusCode::CREATED,
+        Json(ImageView::new(image, &state.config.public_url)),
+    ))
+}
+
+/// `DELETE /api/v1/images/{id}/paths/{path}`: removes a Path (percent-
+/// encoded in the URL like in a public link) from the Image. Answers the
+/// updated Image; 409 `last_path` for the Image's only Path, 404 when the
+/// Path is not one of the Image's.
+pub async fn remove_path(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path((id, path)): Path<(String, String)>,
+) -> Result<Json<ImageView>, ApiError> {
+    let id = image_id(&id)?;
+    let image = store::remove_path(&state.db, id, &path).await?;
+    Ok(Json(ImageView::new(image, &state.config.public_url)))
+}
+
+/// `PUT /api/v1/images/{id}/primary` with `{"path": "cat.png"}`: makes one
+/// of the Image's Paths its Primary Path. Answers the updated Image; 404
+/// when the Path is not one of the Image's.
+pub async fn set_primary(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<String>,
+    body: Result<Json<PathRequest>, JsonRejection>,
+) -> Result<Json<ImageView>, ApiError> {
+    let id = image_id(&id)?;
+    let path = path_request(body)?;
+    let image = store::set_primary(&state.db, id, &path).await?;
     Ok(Json(ImageView::new(image, &state.config.public_url)))
 }

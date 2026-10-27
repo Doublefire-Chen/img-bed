@@ -157,7 +157,16 @@ export const api = {
   uploadFile,
   libraryPage,
   image: (id: number) => request<Image>("GET", `/images/${id}`),
+  addPath: (id: number, path: string) => request<Image>("POST", `/images/${id}/paths`, { path }),
+  removePath: (id: number, path: string) =>
+    request<Image>("DELETE", `/images/${id}/paths/${encodePath(path)}`),
+  setPrimary: (id: number, path: string) => request<Image>("PUT", `/images/${id}/primary`, { path }),
 };
+
+/** Percent-encodes each segment of a Path, keeping the `/` between them. */
+function encodePath(path: string): string {
+  return path.split("/").map(encodeURIComponent).join("/");
+}
 
 export function isUnauthorized(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401;

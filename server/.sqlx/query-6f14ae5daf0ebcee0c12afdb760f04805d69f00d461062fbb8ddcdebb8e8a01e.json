@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE paths SET is_primary = 1\n             WHERE id = (SELECT id FROM paths WHERE image_id = ? ORDER BY id LIMIT 1)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "6f14ae5daf0ebcee0c12afdb760f04805d69f00d461062fbb8ddcdebb8e8a01e"
+}

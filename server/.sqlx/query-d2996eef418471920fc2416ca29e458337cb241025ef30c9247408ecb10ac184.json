@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE paths SET is_primary = 0 WHERE image_id = ? AND is_primary = 1 AND path <> ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "d2996eef418471920fc2416ca29e458337cb241025ef30c9247408ecb10ac184"
+}

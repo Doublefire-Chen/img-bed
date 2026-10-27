@@ -23,6 +23,7 @@
 use time::OffsetDateTime;
 
 use crate::image_type::ImageType;
+use crate::path;
 use crate::random::RandomSource;
 
 /// The characters of `{random:N}`.
@@ -129,10 +130,10 @@ impl Template {
         if source.is_empty() {
             return Err(TemplateError::Empty);
         }
-        if source.starts_with('/') || source.ends_with('/') || source.contains("//") {
+        if path::has_bad_slash(source) {
             return Err(TemplateError::BadSlash);
         }
-        if source.split('/').any(|s| s == "." || s == "..") {
+        if path::has_dot_segment(source) {
             return Err(TemplateError::DotSegment);
         }
         let mut parts = Vec::new();
@@ -155,7 +156,8 @@ impl Template {
                     parts.push(parse_variable(&var)?);
                 }
                 '}' => return Err(TemplateError::UnmatchedBrace),
-                c if c.is_ascii_alphanumeric() || "-_.~/".contains(c) => literal.push(c),
+                // Literals are ASCII; only `{name}` brings in other scripts.
+                c if c.is_ascii() && path::is_path_char(c) => literal.push(c),
                 c => return Err(TemplateError::BadCharacter(c)),
             }
         }
