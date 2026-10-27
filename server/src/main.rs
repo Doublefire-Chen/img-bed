@@ -1,3 +1,5 @@
+use std::io::IsTerminal;
+
 use clap::Parser;
 use tracing_subscriber::EnvFilter;
 
@@ -8,6 +10,8 @@ async fn main() -> std::process::ExitCode {
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .with_writer(std::io::stderr)
+        // No colour escapes in the systemd journal or other non-terminals.
+        .with_ansi(std::io::stderr().is_terminal())
         .init();
 
     let cli = img_bed::cli::Cli::parse();

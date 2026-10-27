@@ -45,6 +45,15 @@ proxies `/api` to `127.0.0.1:8080`. Open `http://localhost:5173/admin/`.
 The session cookie is `Secure`; browsers accept it on `http://localhost`, but in
 production serve img-bed over HTTPS (nginx terminates TLS and proxies to `listen`).
 
+## Deploy
+
+[deploy/README.md](deploy/README.md) covers running img-bed on a Linux server
+with systemd behind nginx (unit, production config and nginx server block in
+`deploy/`), plus upgrade, rollback and backup. Pushing a `vX.Y.Z` tag builds
+static Linux binaries (x86_64 and aarch64, musl) and the admin frontend and
+attaches them to a GitHub Release; CI also runs the server and web checks on
+every push and pull request to `main`.
+
 ## Configuration
 
 See `server/img-bed.example.toml`. Keys: `listen`, `data_dir` (database and

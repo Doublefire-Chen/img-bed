@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # Queries are checked against the committed server/.sqlx data.
+  SQLX_OFFLINE: "true"
+  RUST_TOOLCHAIN: "1.90.0"
+
+jobs:
+  server:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked
+
+  web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm build
+
+  # On a v* tag: static Linux binaries and the admin frontend, attached to a
+  # GitHub Release.
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [server, web]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the tag matches both versions
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          server=$(sed -n 's/^version = "\(.*\)"/\1/p' server/Cargo.toml | head -n1)
+          web=$(node -p "require('./web/package.json').version")
+          echo "tag=$tag server=$server web=$web"
+          test "$tag" = "$server" && test "$tag" = "$web"
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
+      # cargo-zigbuild uses zig as the C cross-compiler for the bundled SQLite.
+      - run: pip install ziglang==0.16.0 cargo-zigbuild==0.24.0
+      - name: Build binaries
+        working-directory: server
+        run: >-
+          cargo zigbuild --release --locked
+          --target x86_64-unknown-linux-musl
+          --target aarch64-unknown-linux-musl
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 11.15.1
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Build frontend
+        working-directory: web
+        run: pnpm install --frozen-lockfile && pnpm build
+      - name: Package
+        run: |
+          v="$GITHUB_REF_NAME"
+          mkdir dist
+          for arch in x86_64 aarch64; do
+            name="img-bed-$v-$arch-linux-musl"
+            mkdir "$name"
+            cp "server/target/$arch-unknown-linux-musl/release/img-bed" "$name/"
+            cp deploy/img-bed.service deploy/img-bed.toml deploy/nginx-img-bed.conf deploy/README.md LICENSE "$name/"
+            tar --owner=0 --group=0 -czf "dist/$name.tar.gz" "$name"
+          done
+          # Unpacks to web/ (index.html at web/index.html).
+          tar --owner=0 --group=0 -czf "dist/img-bed-$v-web.tar.gz" -C web/dist --transform 's,^\.,web,' .
+          (cd dist && sha256sum -- * > SHA256SUMS)
+          ls -l dist
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag

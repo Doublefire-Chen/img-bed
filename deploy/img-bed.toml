@@ -1,0 +1,20 @@
+# Production config for img-bed. Install as /etc/img-bed/img-bed.toml
+# (owner root, group img-bed, mode 0640). See deploy/README.md.
+
+# Only nginx talks to the binary; it is not reachable from outside.
+listen = "127.0.0.1:8080"
+
+# The whole state: SQLite database (img-bed.db plus -wal/-shm) and Image
+# files. Must match ReadWritePaths in img-bed.service.
+data_dir = "/var/lib/img-bed"
+
+# The admin frontend (web/dist, or web/ from the release's web tarball).
+# /opt/img-bed/current is a symlink to the installed release's directory.
+frontend_dir = "/opt/img-bed/current/web"
+
+# Largest accepted file, in MiB. nginx's client_max_body_size must be at
+# least this + 1M (21M for 20).
+upload_limit_mb = 20
+
+# Links handed out after an upload start with this.
+public_url = "https://img.aka.cy"

@@ -149,4 +149,29 @@ mod tests {
         assert!(Config::parse("lsiten = \"x\"", Path::new("/")).is_err());
         assert!(Config::parse("upload_limit_mb = 0", Path::new("/")).is_err());
     }
+
+    /// The files in `deploy/` must agree with each other: the production
+    /// config parses, the systemd unit lets the server write its data_dir,
+    /// and nginx accepts the largest upload plus 1 MiB of form overhead.
+    #[test]
+    fn deploy_samples_are_consistent() {
+        let c = Config::parse(
+            include_str!("../../deploy/img-bed.toml"),
+            Path::new("/etc/img-bed"),
+        )
+        .unwrap();
+        assert_eq!(c.public_url, "https://img.aka.cy");
+        assert!(c.listen.ip().is_loopback());
+
+        let unit = include_str!("../../deploy/img-bed.service");
+        let rw = format!("ReadWritePaths={}\n", c.data_dir.display());
+        assert!(unit.contains(&rw), "unit lacks {rw:?}");
+
+        let nginx = include_str!("../../deploy/nginx-img-bed.conf");
+        let limit_mb = c.upload_limit_bytes / (1024 * 1024);
+        let body = format!("client_max_body_size {}M;", limit_mb + 1);
+        assert!(nginx.contains(&body), "nginx sample lacks {body:?}");
+        let listen = format!("server {};", c.listen);
+        assert!(nginx.contains(&listen), "nginx sample lacks {listen:?}");
+    }
 }
