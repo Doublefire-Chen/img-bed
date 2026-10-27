@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::auth::Owner;
+use crate::auth::{Owner, Uploader};
 use crate::error::ApiError;
 use crate::path;
 use crate::serve::url_for;
@@ -109,13 +109,16 @@ pub enum UploadResult {
 /// `POST /api/v1/images`: upload one or more files as `multipart/form-data`
 /// (every part with a filename, or named `file`, is a file).
 ///
+/// The only endpoint an API Token (`Authorization: Bearer`) may call; it
+/// also accepts the Owner's session.
+///
 /// Each file is handled on its own and gets one entry in `results`, in
 /// order. The status is 200 when at least one file was stored; when none
 /// was, it is the status of the first failure (e.g. 413 or 415) and the
 /// body also carries that failure as the usual top-level `error`.
 pub async fn upload(
     State(state): State<AppState>,
-    _owner: Owner,
+    _uploader: Uploader,
     multipart: Result<Multipart, MultipartRejection>,
 ) -> Result<Response, ApiError> {
     let mut multipart = multipart.map_err(|e| ApiError::BadRequest(e.body_text()))?;

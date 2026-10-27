@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE api_tokens SET revoked_at = COALESCE(revoked_at, ?)\n           WHERE id = ?\n           RETURNING id AS \"id!\", name, created_at, last_used_at, revoked_at",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "last_used_at",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "revoked_at",
+        "ordinal": 4,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "bd7f7b4f602c6ff68868ca44d361c893ed9cee320ca6884d2cda066efff72e5e"
+}

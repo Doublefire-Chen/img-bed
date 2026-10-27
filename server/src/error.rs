@@ -10,6 +10,9 @@ use serde_json::json;
 pub enum ApiError {
     #[error("not logged in")]
     Unauthorized,
+    /// An `Authorization: Bearer` API Token that is unknown or revoked.
+    #[error("the API Token is invalid or has been revoked")]
+    InvalidToken,
     #[error("wrong password")]
     WrongPassword,
     #[error("no password has been set; run `img-bed set-password` on the server")]
@@ -48,6 +51,9 @@ pub enum ApiError {
     /// Permanent Delete is only for Images in the Trash.
     #[error("{} not in the Trash; move {} to the Trash first", if *.0 == 1 { "1 Image is" } else { "some Images are" }, if *.0 == 1 { "it" } else { "them" })]
     NotInTrash(usize),
+    /// An active API Token already has this name.
+    #[error("an active API Token is already named {0:?}")]
+    TokenNameTaken(String),
     /// A Path Template the Owner tried to save or preview is invalid.
     #[error("{0}")]
     InvalidTemplate(#[from] crate::path_template::TemplateError),
@@ -59,6 +65,7 @@ impl ApiError {
     pub fn status_and_code(&self) -> (StatusCode, &'static str) {
         match self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
+            Self::InvalidToken => (StatusCode::UNAUTHORIZED, "invalid_token"),
             Self::WrongPassword => (StatusCode::UNAUTHORIZED, "wrong_password"),
             Self::NoPassword => (StatusCode::UNAUTHORIZED, "no_password"),
             Self::TooManyAttempts { .. } => (StatusCode::TOO_MANY_REQUESTS, "too_many_attempts"),
@@ -77,6 +84,7 @@ impl ApiError {
             Self::LastPath(_) => (StatusCode::CONFLICT, "last_path"),
             Self::ImageInTrash => (StatusCode::CONFLICT, "image_in_trash"),
             Self::NotInTrash(_) => (StatusCode::CONFLICT, "not_in_trash"),
+            Self::TokenNameTaken(_) => (StatusCode::CONFLICT, "token_name_taken"),
             Self::InvalidTemplate(e) => {
                 use crate::path_template::TemplateError;
                 let code = match e {
@@ -125,6 +133,12 @@ impl IntoResponse for ApiError {
         let (status, code) = self.status_and_code();
         let body = json!({ "error": { "code": code, "message": self.to_string() } });
         let mut response = (status, Json(body)).into_response();
+        if matches!(self, Self::InvalidToken) {
+            response.headers_mut().insert(
+                header::WWW_AUTHENTICATE,
+                HeaderValue::from_static("Bearer error=\"invalid_token\""),
+            );
+        }
         if let Self::TooManyAttempts { retry_after_secs } = self {
             response
                 .headers_mut()

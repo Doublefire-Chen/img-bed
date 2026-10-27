@@ -19,6 +19,10 @@
 //! (`app.random`): push bytes into it to force the next `{random:N}` draws,
 //! e.g. to make a Path collide or hit a Reserved Prefix.
 //!
+//! API Tokens: `app.create_token_ok(&session, name)` returns the secret;
+//! `app.upload_with_token(..)` and `app.request_with_token(..)` send it as
+//! `Authorization: Bearer`.
+//!
 //! The automatic Permanent Delete of the Trash runs on demand with
 //! `app.purge_trash()` (after `app.clock.advance(..)`).
 //!
@@ -294,6 +298,62 @@ impl TestApp {
                 .unwrap(),
         )
         .await
+    }
+
+    /// Uploads files to `POST /api/v1/images` with `Authorization: Bearer
+    /// <secret>` (an API Token) and no session.
+    pub async fn upload_with_token(&self, secret: &str, files: &[(&str, &[u8])]) -> TestResponse {
+        let (content_type, body) = multipart_body(files);
+        self.send(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/api/v1/images")
+                .header(header::AUTHORIZATION, format!("Bearer {secret}"))
+                .header(header::CONTENT_TYPE, content_type)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+    }
+
+    /// A request with `Authorization: Bearer <secret>` (an API Token) and no
+    /// session; `json` is sent as the body when given.
+    pub async fn request_with_token(
+        &self,
+        method: Method,
+        uri: &str,
+        secret: &str,
+        json: Option<Value>,
+    ) -> TestResponse {
+        let mut builder = Request::builder()
+            .method(method)
+            .uri(uri)
+            .header(header::AUTHORIZATION, format!("Bearer {secret}"));
+        let body = match json {
+            Some(json) => {
+                builder = builder.header(header::CONTENT_TYPE, "application/json");
+                Body::from(json.to_string())
+            }
+            None => Body::empty(),
+        };
+        self.send(builder.body(body).unwrap()).await
+    }
+
+    /// Creates an API Token named `name` and returns (the token as answered,
+    /// its secret), asserting success.
+    pub async fn create_token_ok(&self, session: &Session, name: &str) -> (Value, String) {
+        let res = self
+            .request(
+                Method::POST,
+                "/api/v1/tokens",
+                Some(session),
+                Some(serde_json::json!({ "name": name })),
+            )
+            .await;
+        assert_eq!(res.status, StatusCode::CREATED, "{}", res.text());
+        let token = res.json();
+        let secret = token["secret"].as_str().expect("secret").to_owned();
+        (token, secret)
     }
 
     /// Uploads one file and returns its result's `image`, asserting success.

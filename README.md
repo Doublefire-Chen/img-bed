@@ -59,8 +59,8 @@ may carry 1 MiB of form overhead on top of the limit, so nginx's
 The admin area opens on the Upload page: drop files, paste from the clipboard
 or pick several at once; each gets its link with copy buttons (URL, Markdown,
 HTML, BBCode). The API equivalent is `POST /api/v1/images` with
-`multipart/form-data` (Owner session required for now), returning one entry
-per file in `results`.
+`multipart/form-data` (Owner session or an API Token, see below), returning
+one entry per file in `results`.
 
 Only JPEG, PNG, GIF, WebP, AVIF and SVG are accepted, judged by content. Files
 are stored unmodified under `data_dir/images/` by SHA-256, and each new Image
@@ -156,6 +156,49 @@ API (Owner session):
 Errors (400): `template_not_unique` (neither `{random:N}` nor `{hash:N}`),
 `unknown_variable`, `invalid_template` (anything else, e.g. bad characters,
 a missing length, a leading `api/` or `admin/`).
+
+## API Tokens
+
+Tools such as PicGo, ShareX, Typora or a script upload with an API Token. On
+the API Tokens page, create a named token; its secret (`imgbed_` followed by
+43 characters) is shown once with a copy button and stored only as a SHA-256
+hash. The list shows each token's created, last-used (updated at most once a
+minute) and revoked dates; Revoke stops a token at once. Revoked tokens stay
+listed as revoked, and an active token's name must be unique.
+
+A token can call the upload endpoint and nothing else; every other endpoint
+answers 401 to it. Send it as `Authorization: Bearer <secret>`:
+
+```sh
+curl -H "Authorization: Bearer imgbed_..." \
+  -F "file=@photo.png" \
+  https://img.example.com/api/v1/images
+```
+
+The response is the same as for a browser upload (Duplicate Upload and
+Restore included); the link is at `results[0].image.url`. An unknown or
+revoked token gets 401 with code `invalid_token`.
+
+Custom uploaders (PicGo's web-uploader plugin, ShareX custom uploader, etc.):
+
+| Setting | Value |
+| --- | --- |
+| URL / endpoint | `https://<your host>/api/v1/images`, method `POST` |
+| Header | `Authorization: Bearer <secret>` |
+| Body | `multipart/form-data`, file form name `file` |
+| URL in the response (JSON path) | `results[0].image.url` (ShareX: `{json:results[0].image.url}`) |
+
+API (Owner session; a token can't manage tokens):
+
+- `GET /api/v1/tokens`: `tokens`, each `id`, `name`, `created_at`,
+  `last_used_at`, `revoked_at` (unix seconds or null); active first, then
+  newest first. Never includes secrets.
+- `POST /api/v1/tokens` with `{"name": "..."}` (trimmed, 1–100 characters):
+  201 with the token and its `secret`, the only time it is returned.
+  `token_name_taken` (409) if an active token has that name.
+- `DELETE /api/v1/tokens/{id}`: revokes it and answers the token.
+
+Tokens are not affected by `set-password`, which ends sessions only.
 
 ## Password
 

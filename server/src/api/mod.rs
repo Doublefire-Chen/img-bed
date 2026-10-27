@@ -1,12 +1,14 @@
 //! The JSON API under the Reserved Prefix `api/`, versioned as `api/v1/`.
 //!
-//! Public endpoints: `GET info`, `POST session` (login). Everything else,
+//! Public endpoints: `GET info`, `POST session` (login). `POST images`
+//! (upload) takes an Owner session or an API Token. Everything else,
 //! including unknown paths, requires an Owner session (401 otherwise).
 
 pub mod images;
 mod info;
 mod session;
 mod settings;
+mod tokens;
 mod trash;
 
 use axum::Router;
@@ -37,6 +39,8 @@ pub fn router() -> Router<AppState> {
         .route("/trash/{id}", delete(trash::delete_one))
         .route("/settings", get(settings::get).put(settings::update))
         .route("/settings/preview", post(settings::preview))
+        .route("/tokens", get(tokens::list).post(tokens::create))
+        .route("/tokens/{id}", delete(tokens::revoke))
         .method_not_allowed_fallback(method_not_allowed);
     Router::new().nest("/v1", v1).fallback(not_found)
 }

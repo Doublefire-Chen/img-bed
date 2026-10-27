@@ -21,6 +21,7 @@ pub mod serve;
 pub mod settings;
 pub mod state;
 pub mod store;
+pub mod tokens;
 pub mod trash;
 
 /// The server version, reported by `GET /api/v1/info`.

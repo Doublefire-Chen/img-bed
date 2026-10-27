@@ -202,6 +202,30 @@ export interface TemplatePreview {
 
 export const SETTINGS_KEY = ["settings"] as const;
 
+/** An API Token as listed; the secret is never included. */
+export interface ApiToken {
+  id: number;
+  name: string;
+  /** Unix seconds. */
+  created_at: number;
+  /** Unix seconds; null until first used. Updated at most once a minute. */
+  last_used_at: number | null;
+  /** Unix seconds; null while the token is active. */
+  revoked_at: number | null;
+}
+
+/** A newly created API Token with its secret, which is shown only this once. */
+export interface CreatedApiToken extends ApiToken {
+  secret: string;
+}
+
+export const TOKENS_KEY = ["tokens"] as const;
+
+/** The upload endpoint, the only one an API Token may call. */
+export const UPLOAD_ENDPOINT = "/api/v1/images";
+/** The multipart field the upload endpoint reads files from. */
+export const UPLOAD_FIELD = "file";
+
 export const api = {
   info: () => request<Info>("GET", "/info"),
   session: () => request<SessionInfo>("GET", "/session"),
@@ -227,6 +251,9 @@ export const api = {
     request<Settings>("PUT", "/settings", { path_template: template }),
   previewPathTemplate: (template: string) =>
     request<TemplatePreview>("POST", "/settings/preview", { path_template: template }),
+  tokens: () => request<{ tokens: ApiToken[] }>("GET", "/tokens"),
+  createToken: (name: string) => request<CreatedApiToken>("POST", "/tokens", { name }),
+  revokeToken: (id: number) => request<ApiToken>("DELETE", `/tokens/${id}`),
 };
 
 /** The Image's file for previews, also while it is in the Trash (Owner session). */

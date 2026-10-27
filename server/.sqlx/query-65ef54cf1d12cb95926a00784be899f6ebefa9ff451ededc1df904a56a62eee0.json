@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!\", name, created_at, last_used_at, revoked_at\n           FROM api_tokens\n           ORDER BY revoked_at IS NOT NULL, created_at DESC, id DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "created_at",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "last_used_at",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "revoked_at",
+        "ordinal": 4,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "65ef54cf1d12cb95926a00784be899f6ebefa9ff451ededc1df904a56a62eee0"
+}

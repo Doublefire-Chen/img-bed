@@ -1,9 +1,6 @@
 import { NavLink, Outlet } from "react-router";
 import { useLogout } from "../session";
 
-// Sections arrive in later slices; until then they are shown but disabled.
-const upcoming = ["API Tokens"];
-
 export function Layout() {
   const logout = useLogout();
 
@@ -19,11 +16,7 @@ export function Layout() {
           </NavLink>
           <NavLink to="/library">Library</NavLink>
           <NavLink to="/trash">Trash</NavLink>
-          {upcoming.map((label) => (
-            <span key={label} className="nav-disabled" title="Coming soon" aria-disabled="true">
-              {label}
-            </span>
-          ))}
+          <NavLink to="/tokens">API Tokens</NavLink>
           <NavLink to="/settings">Settings</NavLink>
         </nav>
         <button

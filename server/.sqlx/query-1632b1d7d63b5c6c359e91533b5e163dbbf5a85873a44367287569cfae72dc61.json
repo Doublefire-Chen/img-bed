@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO api_tokens (name, secret_hash, created_at) VALUES (?, ?, ?)\n           ON CONFLICT DO NOTHING\n           RETURNING id AS \"id!\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1632b1d7d63b5c6c359e91533b5e163dbbf5a85873a44367287569cfae72dc61"
+}

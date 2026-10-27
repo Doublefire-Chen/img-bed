@@ -8,7 +8,11 @@
 //!   cookie; only its SHA-256 is stored. It expires a fixed time after login
 //!   ([`SESSION_TTL`], or [`REMEMBER_ME_TTL`]) and never slides.
 //! - Handlers that need the Owner take an [`Owner`] argument; extracting it
-//!   fails with 401 when there is no valid session.
+//!   fails with 401 when there is no valid session. [`Owner`] ignores
+//!   `Authorization` headers, so an API Token is refused everywhere it is
+//!   used.
+//! - The upload endpoint alone takes an [`Uploader`]: the Owner's session or
+//!   an active API Token (`Authorization: Bearer <secret>`).
 
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -218,6 +222,42 @@ impl FromRequestParts<AppState> for Owner {
             session_id: row.id,
             expires_at,
         })
+    }
+}
+
+/// Who is uploading: the Owner in the browser, or a tool with an API Token.
+/// Only the upload endpoint takes this; every other endpoint takes [`Owner`].
+///
+/// A request with an `Authorization` header is judged by it alone: it must be
+/// `Bearer <secret>` of an active API Token (401 `invalid_token` otherwise),
+/// and a session cookie next to it is not consulted. Without the header the
+/// Owner's session is required, as for [`Owner`].
+#[derive(Debug, Clone)]
+pub enum Uploader {
+    Owner(Owner),
+    ApiToken { token_id: i64 },
+}
+
+impl FromRequestParts<AppState> for Uploader {
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, ApiError> {
+        let Some(value) = parts.headers.get(header::AUTHORIZATION) else {
+            return Ok(Uploader::Owner(
+                Owner::from_request_parts(parts, state).await?,
+            ));
+        };
+        let secret = value
+            .to_str()
+            .ok()
+            .and_then(|v| v.split_once(' '))
+            .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("bearer"))
+            .map(|(_, secret)| secret.trim())
+            .ok_or(ApiError::InvalidToken)?;
+        let token_id = crate::tokens::authenticate(&state.db, secret, state.now())
+            .await?
+            .ok_or(ApiError::InvalidToken)?;
+        Ok(Uploader::ApiToken { token_id })
     }
 }
 
