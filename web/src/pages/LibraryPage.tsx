@@ -1,7 +1,8 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { api, LIBRARY_KEY } from "../api";
+import { DeleteConfirm } from "../components/DeleteConfirm";
 import { formatDate, formatDateTime, formatSize, previewSrc } from "../format";
 
 /** Images per page in the grid. */
@@ -12,7 +13,8 @@ const SEARCH_DELAY_MS = 250;
 /**
  * The Library: every Image (not in the Trash), newest first, in pages, with a
  * search by Path or original filename. The page and search live in the URL,
- * so coming back from an Image keeps the place.
+ * so coming back from an Image keeps the place. Images on the page can be
+ * selected and deleted (moved to the Trash) together.
  */
 export function LibraryPage() {
   const [params, setParams] = useSearchParams();
@@ -49,6 +51,42 @@ export function LibraryPage() {
   const data = query.data;
   const stats = data?.stats;
 
+  // Selection is per page: it is cleared when the page or search changes.
+  const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [trashed, setTrashed] = useState<number[] | null>(null);
+  useEffect(() => {
+    setSelected(new Set());
+    setConfirming(false);
+  }, [page, search]);
+  const selectedImages = (data?.images ?? []).filter((image) => selected.has(image.id));
+  const toggle = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const queryClient = useQueryClient();
+  const refresh = () => queryClient.invalidateQueries({ queryKey: LIBRARY_KEY });
+  const trash = useMutation({
+    mutationFn: (ids: number[]) => api.trash(ids),
+    onSuccess: (result) => {
+      setTrashed(result.images.map((image) => image.id));
+      setSelected(new Set());
+      setConfirming(false);
+      void refresh();
+    },
+  });
+  const undo = useMutation({
+    mutationFn: (ids: number[]) => api.restore(ids),
+    onSuccess: () => {
+      setTrashed(null);
+      void refresh();
+    },
+  });
+
   return (
     <section>
       <header className="library-header">
@@ -70,6 +108,72 @@ export function LibraryPage() {
           onChange={(e) => setTyped(e.target.value)}
         />
       </header>
+
+      {trashed && (
+        <p className="notice small library-notice" role="status">
+          Moved {trashed.length} {trashed.length === 1 ? "Image" : "Images"} to the{" "}
+          <Link to="/trash">Trash</Link>.{" "}
+          <button
+            type="button"
+            className="button-small"
+            disabled={undo.isPending}
+            onClick={() => undo.mutate(trashed)}
+          >
+            {undo.isPending ? "Restoring…" : "Undo"}
+          </button>
+          {undo.isError && <span className="error"> {undo.error.message}</span>}
+        </p>
+      )}
+
+      {data && data.images.length > 0 && (
+        <div className="selection-bar">
+          <span className="muted small">
+            {selected.size > 0 ? `${selected.size} selected` : "Select Images to delete several at once"}
+          </span>
+          <button
+            type="button"
+            className="button-small button-quiet"
+            onClick={() => setSelected(new Set(data.images.map((image) => image.id)))}
+            disabled={selected.size === data.images.length}
+          >
+            Select page
+          </button>
+          {selected.size > 0 && (
+            <>
+              <button
+                type="button"
+                className="button-small button-quiet"
+                onClick={() => {
+                  setSelected(new Set());
+                  setConfirming(false);
+                }}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                className="button-small button-danger"
+                disabled={confirming}
+                onClick={() => {
+                  trash.reset();
+                  setConfirming(true);
+                }}
+              >
+                Delete
+              </button>
+            </>
+          )}
+        </div>
+      )}
+      {confirming && selectedImages.length > 0 && (
+        <DeleteConfirm
+          images={selectedImages}
+          pending={trash.isPending}
+          error={trash.error}
+          onConfirm={() => trash.mutate(selectedImages.map((image) => image.id))}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
 
       {query.isError && (
         <p className="error" role="alert">
@@ -106,7 +210,15 @@ export function LibraryPage() {
           )}
           <ul className={`grid${query.isPlaceholderData ? " grid-stale" : ""}`}>
             {data.images.map((image) => (
-              <li key={image.id}>
+              <li key={image.id} className={`tile-item${selected.has(image.id) ? " tile-selected" : ""}`}>
+                <label className="tile-check" title="Select">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(image.id)}
+                    onChange={() => toggle(image.id)}
+                    aria-label={`Select /${image.path}`}
+                  />
+                </label>
                 <Link
                   to={`/library/${image.id}`}
                   state={{ librarySearch: location.search }}

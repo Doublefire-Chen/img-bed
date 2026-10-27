@@ -11,7 +11,7 @@ use crate::clock::{Clock, SystemClock};
 use crate::config::Config;
 use crate::random::OsRandom;
 use crate::state::AppState;
-use crate::{app, auth, db};
+use crate::{app, auth, db, trash};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -67,6 +67,8 @@ async fn serve(config: Config) -> anyhow::Result<()> {
     let addr = listener.local_addr()?;
     tracing::info!("links to uploaded Images start with {}/", config.public_url);
     let state = AppState::load(config, db, Arc::new(SystemClock), Arc::new(OsRandom)).await?;
+    // Permanently Deletes Images trashed over 30 days ago, now and hourly.
+    tokio::spawn(trash::purge_periodically(state.clone()));
     let router = app::router(state);
     // Printed (not just logged) so scripts and tests can find the port.
     println!("img-bed {} listening on http://{addr}", crate::VERSION);

@@ -742,3 +742,98 @@ a:focus-visible {
 .variables caption {
   text-align: left;
 }
+
+/* Selection and the Trash */
+
+.selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.selection-bar > span {
+  flex: 1;
+}
+
+.selection-bar + .confirm,
+.library-notice {
+  margin-bottom: 0.75rem;
+}
+
+.tile-item {
+  position: relative;
+}
+
+.tile-check {
+  position: absolute;
+  top: 0.9rem;
+  left: 0.9rem;
+  z-index: 1;
+  display: flex;
+  padding: 0.2rem;
+  background: var(--surface);
+  border-radius: calc(var(--radius) / 2);
+  opacity: 0.85;
+}
+
+.tile-check input {
+  margin: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.tile-selected .tile {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.trash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.trash-item {
+  display: flex;
+  gap: 0.75rem;
+  padding: 0.6rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.trash-item .thumb {
+  flex: none;
+}
+
+.trash-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.trash-body p {
+  margin: 0;
+}
+
+.trash-paths {
+  overflow-wrap: anywhere;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.detail-actions + .confirm {
+  margin-bottom: 1rem;
+}

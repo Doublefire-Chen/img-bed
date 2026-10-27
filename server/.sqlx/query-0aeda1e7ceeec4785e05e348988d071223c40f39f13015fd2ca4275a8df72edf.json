@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO paths (path, image_id, is_primary, created_at)\n         SELECT ?, id, 0, ? FROM images WHERE id = ? AND trashed_at IS NULL\n         ON CONFLICT (path) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "0aeda1e7ceeec4785e05e348988d071223c40f39f13015fd2ca4275a8df72edf"
+}

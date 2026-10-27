@@ -61,6 +61,9 @@ pub struct Ingested {
     pub image: Image,
     /// The bytes matched an existing Image; nothing new was created.
     pub duplicate: bool,
+    /// The matching Image was in the Trash and has been Restored with all
+    /// its Paths (only with `duplicate`).
+    pub restored: bool,
 }
 
 /// Stores one uploaded file: checks its size and type, writes it to disk and
@@ -69,7 +72,8 @@ pub struct Ingested {
 /// Identical bytes are always the same Image: uploading them again is a
 /// Duplicate Upload, which returns the existing Image (with its original
 /// upload date and existing Paths) and `duplicate: true`, without writing a
-/// file, drawing a Path or touching the record.
+/// file, drawing a Path or touching the record. If that Image is in the
+/// Trash, it is Restored with all its Paths (`restored: true`).
 pub async fn ingest(
     state: &AppState,
     original_filename: &str,
@@ -84,11 +88,25 @@ pub async fn ingest(
     let image_type = ImageType::detect(&bytes).ok_or(ApiError::UnsupportedType)?;
     let sha256 = hex_sha256(&bytes);
 
+    // Held until the record is in place; see `AppState::files_lock`.
+    let _files = state.files_lock.lock().await;
+
     // Checked before anything is written or a Path is drawn.
     if let Some(image) = find_by_sha256(&state.db, &sha256).await? {
+        if image.trashed_at.is_none() {
+            return Ok(Ingested {
+                image,
+                duplicate: true,
+                restored: false,
+            });
+        }
+        crate::trash::restore(&state.db, &[image.id]).await?;
         return Ok(Ingested {
-            image,
+            image: find_by_id(&state.db, image.id)
+                .await?
+                .context("restored image not found")?,
             duplicate: true,
+            restored: true,
         });
     }
 
@@ -121,13 +139,16 @@ pub async fn ingest(
                 .await?
                 .context("image vanished after insert")?,
             duplicate: false,
+            restored: false,
         }),
-        // Another upload of the same bytes won the race.
+        // Another upload of the same bytes won the race (can't happen while
+        // `files_lock` is held, but the insert is safe on its own anyway).
         Ok(None) => Ok(Ingested {
             image: find_by_sha256(&state.db, &sha256)
                 .await?
                 .context("duplicate image not found")?,
             duplicate: true,
+            restored: false,
         }),
         Err(e) => {
             if created_file {
@@ -258,48 +279,81 @@ pub async fn find_by_id(db: &SqlitePool, id: i64) -> Result<Option<Image>, ApiEr
 /// serves the Image at once; the Image's other Paths are untouched.
 ///
 /// A Path belongs to at most one Image: one held by any Image, trashed
-/// Images included, is refused as taken.
+/// Images included, is refused as taken (saying so when the holder is in
+/// the Trash). The Paths of a trashed Image can't be changed until it is
+/// Restored.
 pub async fn add_path(
     db: &SqlitePool,
     image_id: i64,
     new_path: &str,
     now: i64,
 ) -> Result<Image, ApiError> {
-    if find_by_id(db, image_id).await?.is_none() {
-        return Err(ApiError::NotFound);
-    }
+    // One statement: the Image can't be trashed between check and insert.
     let inserted = sqlx::query!(
-        "INSERT INTO paths (path, image_id, is_primary, created_at) VALUES (?, ?, 0, ?)
+        "INSERT INTO paths (path, image_id, is_primary, created_at)
+         SELECT ?, id, 0, ? FROM images WHERE id = ? AND trashed_at IS NULL
          ON CONFLICT (path) DO NOTHING",
         new_path,
-        image_id,
         now,
+        image_id,
     )
     .execute(db)
     .await?
     .rows_affected();
     if inserted == 0 {
-        let holder = sqlx::query_scalar!("SELECT image_id FROM paths WHERE path = ?", new_path)
-            .fetch_optional(db)
-            .await?;
+        check_live(db, image_id).await?;
+        let holder = sqlx::query!(
+            r#"SELECT p.image_id, i.trashed_at IS NOT NULL AS "in_trash!: bool"
+               FROM paths p JOIN images i ON i.id = p.image_id WHERE p.path = ?"#,
+            new_path
+        )
+        .fetch_optional(db)
+        .await?;
+        let held_by = match holder {
+            Some(h) if h.image_id == image_id => PathHolder::ThisImage,
+            Some(h) if h.in_trash => PathHolder::ImageInTrash,
+            _ => PathHolder::AnotherImage,
+        };
         return Err(ApiError::PathTaken {
             path: new_path.to_owned(),
-            by_this_image: holder == Some(image_id),
+            held_by,
         });
     }
     find_by_id(db, image_id).await?.ok_or(ApiError::NotFound)
+}
+
+/// Who holds a Path that was refused as taken.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PathHolder {
+    ThisImage,
+    AnotherImage,
+    /// Another Image, which is in the Trash.
+    ImageInTrash,
+}
+
+/// `NotFound` for an unknown Image, `ImageInTrash` for a trashed one.
+async fn check_live(db: &SqlitePool, image_id: i64) -> Result<(), ApiError> {
+    let trashed_at = sqlx::query_scalar!("SELECT trashed_at FROM images WHERE id = ?", image_id)
+        .fetch_optional(db)
+        .await?;
+    match trashed_at {
+        None => Err(ApiError::NotFound),
+        Some(Some(_)) => Err(ApiError::ImageInTrash),
+        Some(None) => Ok(()),
+    }
 }
 
 /// Removes one of an Image's Paths; it is free for any Image at once.
 ///
 /// An Image always keeps at least one Path, so removing the last one is
 /// refused. Removing the Primary Path makes the oldest remaining Path
-/// Primary.
+/// Primary. A trashed Image's Paths stay as they are until it is Restored.
 pub async fn remove_path(db: &SqlitePool, image_id: i64, path: &str) -> Result<Image, ApiError> {
     // Write first, so the transaction holds the write lock before it reads.
     let mut tx = db.begin().await?;
     let removed = sqlx::query_scalar!(
         r#"DELETE FROM paths WHERE image_id = ? AND path = ?
+             AND EXISTS (SELECT 1 FROM images WHERE id = image_id AND trashed_at IS NULL)
            RETURNING is_primary AS "is_primary: bool""#,
         image_id,
         path,
@@ -307,6 +361,8 @@ pub async fn remove_path(db: &SqlitePool, image_id: i64, path: &str) -> Result<I
     .fetch_optional(&mut *tx)
     .await?;
     let Some(was_primary) = removed else {
+        drop(tx);
+        check_live(db, image_id).await?;
         return Err(ApiError::NotFound);
     };
     let left = sqlx::query_scalar!(
@@ -332,7 +388,8 @@ pub async fn remove_path(db: &SqlitePool, image_id: i64, path: &str) -> Result<I
     find_by_id(db, image_id).await?.ok_or(ApiError::NotFound)
 }
 
-/// Makes one of an Image's Paths its Primary Path (the only one).
+/// Makes one of an Image's Paths its Primary Path (the only one). Refused
+/// for a trashed Image until it is Restored.
 pub async fn set_primary(db: &SqlitePool, image_id: i64, path: &str) -> Result<Image, ApiError> {
     let mut tx = db.begin().await?;
     // Clear the old marker first: at most one Primary per Image is enforced
@@ -345,7 +402,8 @@ pub async fn set_primary(db: &SqlitePool, image_id: i64, path: &str) -> Result<I
     .execute(&mut *tx)
     .await?;
     let updated = sqlx::query!(
-        "UPDATE paths SET is_primary = 1 WHERE image_id = ? AND path = ?",
+        "UPDATE paths SET is_primary = 1 WHERE image_id = ? AND path = ?
+           AND EXISTS (SELECT 1 FROM images WHERE id = image_id AND trashed_at IS NULL)",
         image_id,
         path,
     )
@@ -353,6 +411,8 @@ pub async fn set_primary(db: &SqlitePool, image_id: i64, path: &str) -> Result<I
     .await?
     .rows_affected();
     if updated == 0 {
+        drop(tx);
+        check_live(db, image_id).await?;
         return Err(ApiError::NotFound);
     }
     tx.commit().await?;
@@ -391,7 +451,8 @@ pub async fn list_library(
     )
     .fetch_one(db)
     .await?;
-    let rows = sqlx::query!(
+    let rows = sqlx::query_as!(
+        ImageRow,
         r#"SELECT i.id AS "id!", i.sha256, i.size, i.mime, i.width, i.height,
                   i.original_filename, i.uploaded_at, i.trashed_at
            FROM images i
@@ -408,8 +469,29 @@ pub async fn list_library(
     )
     .fetch_all(db)
     .await?;
+    let images = with_paths(db, rows).await?;
+    Ok(LibraryPage { images, total })
+}
 
-    // The Paths of every Image on the page, in one query.
+/// An `images` row without its Paths.
+pub(crate) struct ImageRow {
+    pub id: i64,
+    pub sha256: String,
+    pub size: i64,
+    pub mime: String,
+    pub width: Option<i64>,
+    pub height: Option<i64>,
+    pub original_filename: String,
+    pub uploaded_at: i64,
+    pub trashed_at: Option<i64>,
+}
+
+/// Fetches the Paths of every Image in `rows` (one query) and keeps the
+/// order of `rows`.
+pub(crate) async fn with_paths(
+    db: &SqlitePool,
+    rows: Vec<ImageRow>,
+) -> Result<Vec<Image>, ApiError> {
     let ids = serde_json::to_string(&rows.iter().map(|r| r.id).collect::<Vec<_>>())
         .context("encoding image ids")?;
     let mut paths: std::collections::HashMap<i64, Vec<ImagePath>> = Default::default();
@@ -443,7 +525,7 @@ pub async fn list_library(
             trashed_at: row.trashed_at,
         })
         .collect();
-    Ok(LibraryPage { images, total })
+    Ok(images)
 }
 
 /// A `LIKE` pattern matching `text` anywhere, with `\` as the escape

@@ -78,6 +78,8 @@ export interface Image {
   uploaded_at: number;
   /** Unix seconds; null unless the Image is in the Trash. */
   trashed_at: number | null;
+  /** When a trashed Image will be Permanently Deleted (unix seconds); null unless in the Trash. */
+  permanent_delete_at: number | null;
   /** The Primary Path and its URL. */
   path: string;
   url: string;
@@ -118,6 +120,8 @@ export interface Uploaded {
   duplicate: boolean;
   /** For a Duplicate Upload, when the Image was first uploaded (unix seconds); otherwise null. */
   original_uploaded_at: number | null;
+  /** The Duplicate Upload matched an Image in the Trash, which was Restored with all its Paths. */
+  restored: boolean;
   image: Image;
 }
 
@@ -144,8 +148,32 @@ async function uploadFile(file: File): Promise<Uploaded> {
   return {
     duplicate: result.duplicate,
     original_uploaded_at: result.original_uploaded_at,
+    restored: result.restored,
     image: result.image,
   };
+}
+
+/** One page of the Trash, most recently trashed first. */
+export interface TrashPage {
+  images: Image[];
+  page: number;
+  per_page: number;
+  /** Images in the Trash. */
+  total: number;
+  pages: number;
+  /** Days an Image stays in the Trash before it is Permanently Deleted. */
+  trash_days: number;
+}
+
+/**
+ * Query-key prefix of the Trash. It lives under the Library key, so changes
+ * that invalidate the Library refresh the Trash too.
+ */
+export const TRASH_KEY = [...LIBRARY_KEY, "trash"] as const;
+
+function trashPage(page: number, perPage: number): Promise<TrashPage> {
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  return request<TrashPage>("GET", `/trash?${params}`);
 }
 
 /** A ready-made Path Template. */
@@ -187,12 +215,24 @@ export const api = {
   removePath: (id: number, path: string) =>
     request<Image>("DELETE", `/images/${id}/paths/${encodePath(path)}`),
   setPrimary: (id: number, path: string) => request<Image>("PUT", `/images/${id}/primary`, { path }),
+  /** Moves Images to the Trash. */
+  trash: (ids: number[]) => request<{ images: Image[] }>("POST", "/trash", { ids }),
+  trashPage,
+  restore: (ids: number[]) => request<{ images: Image[] }>("POST", "/trash/restore", { ids }),
+  /** Permanently Deletes Images from the Trash. */
+  deletePermanently: (ids: number[]) =>
+    request<{ deleted: number }>("POST", "/trash/delete", { ids }),
   settings: () => request<Settings>("GET", "/settings"),
   savePathTemplate: (template: string) =>
     request<Settings>("PUT", "/settings", { path_template: template }),
   previewPathTemplate: (template: string) =>
     request<TemplatePreview>("POST", "/settings/preview", { path_template: template }),
 };
+
+/** The Image's file for previews, also while it is in the Trash (Owner session). */
+export function imageFileSrc(id: number): string {
+  return `/api/v1/images/${id}/file`;
+}
 
 /** Percent-encodes each segment of a Path, keeping the `/` between them. */
 function encodePath(path: string): string {

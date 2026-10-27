@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT p.image_id, i.trashed_at IS NOT NULL AS \"in_trash!: bool\"\n               FROM paths p JOIN images i ON i.id = p.image_id WHERE p.path = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "image_id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "in_trash!: bool",
+        "ordinal": 1,
+        "type_info": "Null"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      null
+    ]
+  },
+  "hash": "8332ad3125caa03e11a0fcbdd1d2f211d20c9314dbde7baeeff52e9382a16694"
+}

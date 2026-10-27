@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use sqlx::SqlitePool;
 use time::OffsetDateTime;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::auth::LoginLimiter;
 use crate::clock::SharedClock;
@@ -23,6 +23,11 @@ pub struct AppState {
     /// startup. Read it with [`crate::settings::path_template`] and change
     /// it with [`crate::settings::set_path_template`].
     pub path_template: Arc<RwLock<Arc<Template>>>,
+    /// Held while a file is created for an Image or erased by a Permanent
+    /// Delete, so an upload of the same bytes can never find the old record
+    /// gone but the file still there (and then lose the file), and a
+    /// Duplicate Upload can't Restore an Image that is being erased.
+    pub files_lock: Arc<Mutex<()>>,
 }
 
 impl AppState {
@@ -41,6 +46,7 @@ impl AppState {
             random,
             login_limiter: Arc::new(LoginLimiter::default()),
             path_template: Arc::new(RwLock::new(Arc::new(path_template))),
+            files_lock: Arc::new(Mutex::new(())),
         })
     }
 

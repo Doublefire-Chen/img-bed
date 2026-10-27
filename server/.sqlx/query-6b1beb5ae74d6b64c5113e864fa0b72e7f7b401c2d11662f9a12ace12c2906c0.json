@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM images\n         WHERE id IN (SELECT value FROM json_each(?)) AND trashed_at IS NOT NULL\n         RETURNING sha256",
+  "describe": {
+    "columns": [
+      {
+        "name": "sha256",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6b1beb5ae74d6b64c5113e864fa0b72e7f7b401c2d11662f9a12ace12c2906c0"
+}

@@ -7,6 +7,7 @@ pub mod images;
 mod info;
 mod session;
 mod settings;
+mod trash;
 
 use axum::Router;
 use axum::routing::{delete, get, post, put};
@@ -25,10 +26,15 @@ pub fn router() -> Router<AppState> {
                 .delete(session::logout),
         )
         .route("/images", get(images::list).post(images::upload))
-        .route("/images/{id}", get(images::detail))
+        .route("/images/{id}", get(images::detail).delete(trash::trash_one))
+        .route("/images/{id}/file", get(images::file))
         .route("/images/{id}/paths", post(images::add_path))
         .route("/images/{id}/paths/{*path}", delete(images::remove_path))
         .route("/images/{id}/primary", put(images::set_primary))
+        .route("/trash", get(trash::list).post(trash::trash_many))
+        .route("/trash/restore", post(trash::restore))
+        .route("/trash/delete", post(trash::delete_many))
+        .route("/trash/{id}", delete(trash::delete_one))
         .route("/settings", get(settings::get).put(settings::update))
         .route("/settings/preview", post(settings::preview))
         .method_not_allowed_fallback(method_not_allowed);

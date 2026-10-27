@@ -1,5 +1,5 @@
 //! `api/v1/images`: uploading Images, the Library list, Image detail and
-//! Path management.
+//! Path management. Deleting (to the Trash) lives in `api::trash`.
 
 use axum::Json;
 use axum::extract::multipart::{Multipart, MultipartError, MultipartRejection};
@@ -39,6 +39,9 @@ pub struct ImageView {
     pub uploaded_at: i64,
     /// Unix seconds; `null` unless the Image is in the Trash.
     pub trashed_at: Option<i64>,
+    /// When a trashed Image will be Permanently Deleted (unix seconds,
+    /// `trashed_at` + 30 days); `null` unless the Image is in the Trash.
+    pub permanent_delete_at: Option<i64>,
     /// The Primary Path and its full URL.
     pub path: String,
     pub url: String,
@@ -72,6 +75,7 @@ impl ImageView {
             original_filename: image.original_filename,
             uploaded_at: image.uploaded_at,
             trashed_at: image.trashed_at,
+            permanent_delete_at: image.trashed_at.map(crate::trash::permanent_delete_at),
             path: primary.0,
             url: primary.1,
             paths,
@@ -91,6 +95,9 @@ pub enum UploadResult {
         /// For a Duplicate Upload, when the existing Image was first
         /// uploaded (unix seconds); `null` for a new Image.
         original_uploaded_at: Option<i64>,
+        /// A Duplicate Upload of an Image in the Trash, which has been
+        /// Restored with all its Paths.
+        restored: bool,
         image: Box<ImageView>,
     },
     Failed {
@@ -159,6 +166,7 @@ pub async fn upload(
                     filename,
                     duplicate: ingested.duplicate,
                     original_uploaded_at,
+                    restored: ingested.restored,
                     image: Box::new(ImageView::new(ingested.image, &state.config.public_url)),
                 });
             }
@@ -286,8 +294,36 @@ pub async fn detail(
     Ok(Json(ImageView::new(image, &state.config.public_url)))
 }
 
+/// `GET /api/v1/images/{id}/file`: the Image's file for the Owner's
+/// previews, also while it is in the Trash (its Paths are 404 then). Same
+/// headers as a Path (ADR 0001), but not cached by shared caches.
+pub async fn file(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<String>,
+    method: axum::http::Method,
+    headers: axum::http::HeaderMap,
+) -> Result<Response, ApiError> {
+    let id = image_id(&id)?;
+    let image = store::find_by_id(&state.db, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    let resolved = store::Resolved {
+        sha256: image.sha256,
+        mime: image.mime,
+        size: image.size,
+    };
+    Ok(
+        crate::serve::file_response(&state, &resolved, &method, &headers, PREVIEW_CACHE_CONTROL)
+            .await,
+    )
+}
+
+/// Owner previews may be kept by the browser only, and revalidated.
+pub const PREVIEW_CACHE_CONTROL: &str = "private, no-cache";
+
 /// An Image id from the URL; anything but a number is an unknown Image.
-fn image_id(id: &str) -> Result<i64, ApiError> {
+pub(crate) fn image_id(id: &str) -> Result<i64, ApiError> {
     id.parse().map_err(|_| ApiError::NotFound)
 }
 

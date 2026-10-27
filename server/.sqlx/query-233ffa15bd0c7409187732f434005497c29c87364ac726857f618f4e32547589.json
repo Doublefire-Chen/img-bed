@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM paths WHERE image_id = ? AND path = ?\n             AND EXISTS (SELECT 1 FROM images WHERE id = image_id AND trashed_at IS NULL)\n           RETURNING is_primary AS \"is_primary: bool\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "is_primary: bool",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "233ffa15bd0c7409187732f434005497c29c87364ac726857f618f4e32547589"
+}

@@ -1,10 +1,10 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT image_id FROM paths WHERE path = ?",
+  "query": "SELECT trashed_at FROM images WHERE id = ?",
   "describe": {
     "columns": [
       {
-        "name": "image_id",
+        "name": "trashed_at",
         "ordinal": 0,
         "type_info": "Integer"
       }
@@ -13,8 +13,8 @@
       "Right": 1
     },
     "nullable": [
-      false
+      true
     ]
   },
-  "hash": "1633314dea50f4c0a92e4501875686c979ad42f160410e9532da6938f1056394"
+  "hash": "8aa9a9196c0744465704e60b18bbf6c7b1b7c19c3c50ad3f49621247de418851"
 }

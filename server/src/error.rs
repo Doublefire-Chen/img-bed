@@ -32,12 +32,22 @@ pub enum ApiError {
     /// A Path the Owner typed in starts with a Reserved Prefix.
     #[error("/{0} starts with a Reserved Prefix (admin/ or api/) and can never be a Path")]
     ReservedPath(String),
-    /// The Path already belongs to an Image (this one or another).
-    #[error("{}", path_taken_message(.path, .by_this_image))]
-    PathTaken { path: String, by_this_image: bool },
+    /// The Path already belongs to an Image (this one, another, or one in
+    /// the Trash).
+    #[error("{}", path_taken_message(.path, *.held_by))]
+    PathTaken {
+        path: String,
+        held_by: crate::store::PathHolder,
+    },
     /// Removing the Path would leave the Image without one.
     #[error("/{0} is the Image's only Path and cannot be removed")]
     LastPath(String),
+    /// The Paths of a trashed Image can't be changed.
+    #[error("the Image is in the Trash; Restore it to change its Paths")]
+    ImageInTrash,
+    /// Permanent Delete is only for Images in the Trash.
+    #[error("{} not in the Trash; move {} to the Trash first", if *.0 == 1 { "1 Image is" } else { "some Images are" }, if *.0 == 1 { "it" } else { "them" })]
+    NotInTrash(usize),
     /// A Path Template the Owner tried to save or preview is invalid.
     #[error("{0}")]
     InvalidTemplate(#[from] crate::path_template::TemplateError),
@@ -59,8 +69,14 @@ impl ApiError {
             Self::TooLarge { .. } => (StatusCode::PAYLOAD_TOO_LARGE, "too_large"),
             Self::InvalidPath(_) => (StatusCode::BAD_REQUEST, "invalid_path"),
             Self::ReservedPath(_) => (StatusCode::BAD_REQUEST, "reserved_path"),
+            Self::PathTaken {
+                held_by: crate::store::PathHolder::ImageInTrash,
+                ..
+            } => (StatusCode::CONFLICT, "path_in_trash"),
             Self::PathTaken { .. } => (StatusCode::CONFLICT, "path_taken"),
             Self::LastPath(_) => (StatusCode::CONFLICT, "last_path"),
+            Self::ImageInTrash => (StatusCode::CONFLICT, "image_in_trash"),
+            Self::NotInTrash(_) => (StatusCode::CONFLICT, "not_in_trash"),
             Self::InvalidTemplate(e) => {
                 use crate::path_template::TemplateError;
                 let code = match e {
@@ -75,11 +91,14 @@ impl ApiError {
     }
 }
 
-fn path_taken_message(path: &str, by_this_image: &bool) -> String {
-    if *by_this_image {
-        format!("/{path} is already a Path of this Image")
-    } else {
-        format!("/{path} is already taken by another Image")
+fn path_taken_message(path: &str, held_by: crate::store::PathHolder) -> String {
+    use crate::store::PathHolder;
+    match held_by {
+        PathHolder::ThisImage => format!("/{path} is already a Path of this Image"),
+        PathHolder::AnotherImage => format!("/{path} is already taken by another Image"),
+        PathHolder::ImageInTrash => format!(
+            "/{path} is held by an Image in Trash; it is free once that Image is Permanently Deleted"
+        ),
     }
 }
 

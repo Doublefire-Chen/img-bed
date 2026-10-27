@@ -11,6 +11,7 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { TrashPage } from "./pages/TrashPage";
 import { UploadPage } from "./pages/UploadPage";
 import { SESSION_KEY } from "./session";
 import "./styles.css";
@@ -47,6 +48,7 @@ const router = createBrowserRouter(
             { index: true, element: <UploadPage /> },
             { path: "library", element: <LibraryPage /> },
             { path: "library/:id", element: <ImagePage /> },
+            { path: "trash", element: <TrashPage /> },
             { path: "settings", element: <SettingsPage /> },
             { path: "*", element: <NotFoundPage /> },
           ],

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE images SET trashed_at = ?\n         WHERE id IN (SELECT value FROM json_each(?)) AND trashed_at IS NULL",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "ed88b74da5995ad72915f9c99102e7200ce79bfbca3a06d57503119b2135fbec"
+}

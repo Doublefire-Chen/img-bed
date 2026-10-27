@@ -43,7 +43,18 @@ pub async fn serve_image(
         Ok(None) => return not_found(),
         Err(e) => return e.into_response(),
     };
+    file_response(&state, &resolved, &method, &headers, CACHE_CONTROL).await
+}
 
+/// The response carrying an Image's file, with the load-bearing headers.
+/// Also used for the Owner's previews (`GET /api/v1/images/{id}/file`).
+pub async fn file_response(
+    state: &AppState,
+    resolved: &store::Resolved,
+    method: &Method,
+    headers: &HeaderMap,
+    cache_control: &'static str,
+) -> Response {
     let etag = format!("\"{}\"", resolved.sha256);
     let mut response_headers = HeaderMap::new();
     response_headers.insert(
@@ -56,14 +67,14 @@ pub async fn serve_image(
     );
     response_headers.insert(
         header::CACHE_CONTROL,
-        HeaderValue::from_static(CACHE_CONTROL),
+        HeaderValue::from_static(cache_control),
     );
     response_headers.insert(
         header::ETAG,
         HeaderValue::from_str(&etag).expect("hex is a valid header value"),
     );
 
-    if if_none_match(&headers, &resolved.sha256) {
+    if if_none_match(headers, &resolved.sha256) {
         return (StatusCode::NOT_MODIFIED, response_headers).into_response();
     }
 
@@ -73,17 +84,14 @@ pub async fn serve_image(
     );
     response_headers.insert(header::CONTENT_LENGTH, HeaderValue::from(resolved.size));
 
-    if method == Method::HEAD {
+    if *method == Method::HEAD {
         return (StatusCode::OK, response_headers).into_response();
     }
     let file_path = store::file_path(&state.config.data_dir, &resolved.sha256);
     let file = match tokio::fs::File::open(&file_path).await {
         Ok(f) => f,
         Err(e) => {
-            tracing::error!(
-                "file for Path /{path} missing at {}: {e}",
-                file_path.display()
-            );
+            tracing::error!("Image file missing at {}: {e}", file_path.display());
             return StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
     };

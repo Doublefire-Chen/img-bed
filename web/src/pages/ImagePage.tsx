@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { Link, useLocation, useParams } from "react-router";
-import { ApiError, api, type Image, type ImagePath, LIBRARY_KEY } from "../api";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
+import { ApiError, api, type Image, imageFileSrc, type ImagePath, LIBRARY_KEY } from "../api";
 import { CopyButtons } from "../components/CopyButtons";
-import { formatDateTime, formatSize, previewSrc } from "../format";
+import { DeleteConfirm } from "../components/DeleteConfirm";
+import { formatDate, formatDateTime, formatSize, previewSrc } from "../format";
 
 function imageKey(id: number) {
   return [...LIBRARY_KEY, "image", id] as const;
@@ -62,25 +63,26 @@ export function ImagePage() {
   return (
     <section>
       {back}
-      <ImageDetail image={query.data} />
+      <ImageDetail image={query.data} libraryLink={`/library${from}`} />
     </section>
   );
 }
 
-function ImageDetail({ image }: { image: Image }) {
+function ImageDetail({ image, libraryLink }: { image: Image; libraryLink: string }) {
   const dimensions =
     image.width != null && image.height != null ? `${image.width} × ${image.height}` : "Unknown";
+  const inTrash = image.trashed_at != null;
+  // A trashed Image's Paths answer 404, so preview it through the API.
+  const src = inTrash ? imageFileSrc(image.id) : previewSrc(image.url);
   return (
     <div className="detail">
-      <a className="detail-preview" href={previewSrc(image.url)} target="_blank" rel="noreferrer">
-        <img src={previewSrc(image.url)} alt={image.original_filename} />
+      <a className="detail-preview" href={src} target="_blank" rel="noreferrer">
+        <img src={src} alt={image.original_filename} />
       </a>
 
       <div className="detail-body">
         <h1 className="detail-title">{image.original_filename || `Image ${image.id}`}</h1>
-        {image.trashed_at != null && (
-          <p className="notice small">In the Trash since {formatDateTime(image.trashed_at)}.</p>
-        )}
+        {inTrash ? <TrashActions image={image} /> : <DeleteAction image={image} libraryLink={libraryLink} />}
         <dl className="facts">
           <dt>Size</dt>
           <dd>
@@ -100,9 +102,127 @@ function ImageDetail({ image }: { image: Image }) {
           </dd>
         </dl>
 
-        <PathsSection image={image} />
+        <PathsSection image={image} readOnly={inTrash} />
       </div>
     </div>
+  );
+}
+
+/** Delete (to the Trash) with a confirmation; then back to the Library. */
+function DeleteAction({ image, libraryLink }: { image: Image; libraryLink: string }) {
+  const [confirming, setConfirming] = useState(false);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const trash = useMutation({
+    mutationFn: () => api.trash([image.id]),
+    onSuccess: (result) => {
+      const updated = result.images[0];
+      if (updated) queryClient.setQueryData(imageKey(image.id), updated);
+      void queryClient.invalidateQueries({ queryKey: LIBRARY_KEY });
+      navigate(libraryLink);
+    },
+  });
+  return (
+    <>
+      <div className="detail-actions">
+        <button
+          type="button"
+          className="button-small button-danger"
+          disabled={confirming}
+          onClick={() => {
+            trash.reset();
+            setConfirming(true);
+          }}
+        >
+          Delete
+        </button>
+      </div>
+      {confirming && (
+        <DeleteConfirm
+          images={[image]}
+          pending={trash.isPending}
+          error={trash.error}
+          onConfirm={() => trash.mutate()}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/** For an Image in the Trash: when it goes for good, Restore and Delete permanently. */
+function TrashActions({ image }: { image: Image }) {
+  const [confirming, setConfirming] = useState(false);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const update = useImageUpdate();
+  const restore = useMutation({
+    mutationFn: () => api.restore([image.id]),
+    onSuccess: (result) => {
+      const updated = result.images[0];
+      if (updated) update(updated);
+    },
+  });
+  const remove = useMutation({
+    mutationFn: () => api.deletePermanently([image.id]),
+    onSuccess: () => {
+      queryClient.removeQueries({ queryKey: imageKey(image.id) });
+      void queryClient.invalidateQueries({ queryKey: LIBRARY_KEY });
+      navigate("/trash");
+    },
+  });
+  const busy = restore.isPending || remove.isPending;
+  return (
+    <>
+      <p className="notice small">
+        In the Trash since {formatDateTime(image.trashed_at!)}; its Paths answer 404 until it is
+        Restored.
+        {image.permanent_delete_at != null && (
+          <>
+            {" "}
+            It will be Permanently Deleted on{" "}
+            <time title={formatDateTime(image.permanent_delete_at)}>
+              {formatDate(image.permanent_delete_at)}
+            </time>
+            .
+          </>
+        )}
+      </p>
+      <div className="detail-actions">
+        <button type="button" className="button-small button-primary" disabled={busy} onClick={() => restore.mutate()}>
+          {restore.isPending ? "Restoring…" : "Restore"}
+        </button>
+        <button
+          type="button"
+          className="button-small button-danger"
+          disabled={busy || confirming}
+          onClick={() => {
+            remove.reset();
+            setConfirming(true);
+          }}
+        >
+          Delete permanently
+        </button>
+        <Link to="/trash" className="small">
+          Trash
+        </Link>
+      </div>
+      {restore.isError && (
+        <p className="error small" role="alert">
+          {restore.error.message}
+        </p>
+      )}
+      {confirming && (
+        <DeleteConfirm
+          images={[image]}
+          permanent
+          pending={remove.isPending}
+          error={remove.error}
+          onConfirm={() => remove.mutate()}
+          onCancel={() => setConfirming(false)}
+        />
+      )}
+    </>
   );
 }
 
@@ -122,7 +242,7 @@ function useImageUpdate() {
 }
 
 /** The Image's Paths, Primary first, with copy buttons and Path management. */
-function PathsSection({ image }: { image: Image }) {
+function PathsSection({ image, readOnly }: { image: Image; readOnly: boolean }) {
   const [adding, setAdding] = useState(false);
   const onlyOne = image.paths.length === 1;
   return (
@@ -131,16 +251,19 @@ function PathsSection({ image }: { image: Image }) {
         <h2 id="paths-heading">
           Paths <span className="muted small">({image.paths.length})</span>
         </h2>
-        {!adding && (
+        {!adding && !readOnly && (
           <button type="button" className="button-small" onClick={() => setAdding(true)}>
             Add Path
           </button>
         )}
       </div>
-      {adding && <AddPathForm image={image} onDone={() => setAdding(false)} />}
+      {readOnly && (
+        <p className="muted small">Restore the Image to change its Paths. They stay held meanwhile.</p>
+      )}
+      {adding && !readOnly && <AddPathForm image={image} onDone={() => setAdding(false)} />}
       <ul className="path-links">
         {image.paths.map((p) => (
-          <PathRow key={p.path} imageId={image.id} path={p} onlyOne={onlyOne} />
+          <PathRow key={p.path} imageId={image.id} path={p} onlyOne={onlyOne} readOnly={readOnly} />
         ))}
       </ul>
     </section>
@@ -232,6 +355,9 @@ function AddPathForm({ image, onDone }: { image: Image; onDone: () => void }) {
 function addPathError(error: Error): string {
   if (error instanceof ApiError) {
     switch (error.code) {
+      case "path_in_trash":
+      case "image_in_trash":
+        return `${error.message}.`;
       case "path_taken":
         return error.message.includes("another Image")
           ? `${error.message}. Remove it from that Image first to move it here.`
@@ -252,10 +378,12 @@ function PathRow({
   imageId,
   path,
   onlyOne,
+  readOnly,
 }: {
   imageId: number;
   path: ImagePath;
   onlyOne: boolean;
+  readOnly: boolean;
 }) {
   const [confirming, setConfirming] = useState(false);
   const update = useImageUpdate();
@@ -277,7 +405,7 @@ function PathRow({
           <code>/{path.path}</code>
           {path.is_primary && <span className="badge small">Primary</span>}
         </p>
-        {!confirming && (
+        {!confirming && !readOnly && (
           <div className="path-actions">
             {!path.is_primary && (
               <button

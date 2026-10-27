@@ -72,7 +72,9 @@ with the headers required by [ADR 0001](docs/adr/0001-admin-on-image-origin.md).
 Uploading bytes that are already stored is a Duplicate Upload: nothing new is
 created, and the result has `"duplicate": true`, the first upload's date in
 `original_uploaded_at`, and the existing Image with all its Paths. The Upload
-page shows "Already uploaded on <date>" with copy buttons for each Path.
+page shows "Already uploaded on <date>" with copy buttons for each Path. If
+that Image is in the Trash, it is Restored with all its Paths and the result
+also has `"restored": true` ("Restored from Trash" on the Upload page).
 
 ## Library
 
@@ -100,13 +102,37 @@ segments, nothing under `admin/` or `api/`); percent-encoded input is decoded.
 API (Owner session), each answering the updated Image:
 
 - `POST /api/v1/images/{id}/paths` with `{"path": "cat.png"}` (201). Errors:
-  400 `invalid_path`, 400 `reserved_path`, 409 `path_taken`.
+  400 `invalid_path`, 400 `reserved_path`, 409 `path_taken`, 409
+  `path_in_trash` (held by an Image in Trash).
 - `DELETE /api/v1/images/{id}/paths/{path}` (the Path percent-encoded as in
   its URL). 409 `last_path` for the Image's only Path. Removing the Primary
   Path makes the oldest remaining Path Primary.
 - `PUT /api/v1/images/{id}/primary` with `{"path": "cat.png"}`.
 
-A Path that is not one of the Image's answers 404.
+A Path that is not one of the Image's answers 404. The Paths of an Image in
+the Trash can't be changed until it is Restored (409 `image_in_trash`).
+
+## Trash
+
+Deleting Images (one from its detail view, or several selected in the
+Library, after a confirmation saying how many Images and Paths stop working)
+moves them to the Trash: their Paths answer 404 but stay held. The Trash page
+lists them with the date each will be Permanently Deleted, 30 days after it
+was deleted; the Owner can Restore one (every Path serves it again) or delete
+it permanently (record and file erased, Paths free). The server Permanently
+Deletes Images trashed over 30 days ago at startup and then hourly.
+
+API (Owner session); bulk requests are all or nothing, at most 1000 ids:
+
+- `DELETE /api/v1/images/{id}` or `POST /api/v1/trash` with `{"ids": [..]}`:
+  move to the Trash. Images carry `trashed_at` and `permanent_delete_at`.
+- `GET /api/v1/trash?page=&per_page=`: the Trash, most recently deleted first.
+- `POST /api/v1/trash/restore` with `{"ids": [..]}`.
+- `POST /api/v1/trash/delete` with `{"ids": [..]}` or `DELETE
+  /api/v1/trash/{id}`: Permanent Delete; 409 `not_in_trash` for an Image not
+  in the Trash.
+- `GET /api/v1/images/{id}/file`: the Image's file for previews, also while
+  it is in the Trash.
 
 ## Settings
 

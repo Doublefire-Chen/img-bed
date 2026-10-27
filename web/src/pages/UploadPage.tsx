@@ -209,6 +209,11 @@ function UploadedLinks({ name, result }: { name: string; result: Uploaded }) {
   const uploadedAt = result.original_uploaded_at ?? image.uploaded_at;
   return (
     <>
+      {result.restored && (
+        <p className="notice small" role="status">
+          <strong>Restored from Trash.</strong> All {image.paths.length === 1 ? "its Path works" : `its ${image.paths.length} Paths work`} again.
+        </p>
+      )}
       {result.duplicate && (
         <p className="notice small" role="status">
           Already uploaded on <time title={formatDateTime(uploadedAt)}>{formatDate(uploadedAt)}</time>

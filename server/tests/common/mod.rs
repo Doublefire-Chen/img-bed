@@ -19,6 +19,9 @@
 //! (`app.random`): push bytes into it to force the next `{random:N}` draws,
 //! e.g. to make a Path collide or hit a Reserved Prefix.
 //!
+//! The automatic Permanent Delete of the Trash runs on demand with
+//! `app.purge_trash()` (after `app.clock.advance(..)`).
+//!
 //! Tests only look at requests and responses (and CLI output), never at
 //! database rows.
 
@@ -61,6 +64,9 @@ pub struct TestApp {
     /// The app's random source; push bytes to force `{random:N}` draws.
     pub random: ScriptedRandom,
     pub config: Config,
+    /// The app's state, for calling server functions that have no HTTP
+    /// endpoint (e.g. [`TestApp::purge_trash`]).
+    pub state: AppState,
     /// Owns the temporary directory; it is deleted when the TestApp drops.
     pub dir: Arc<TempDir>,
 }
@@ -175,12 +181,22 @@ impl TestApp {
         .await
         .expect("load state");
         Self {
-            router: app::router(state),
+            router: app::router(state.clone()),
+            state,
             clock,
             random,
             config,
             dir,
         }
+    }
+
+    /// Runs the automatic Permanent Delete of Images trashed over 30 days
+    /// ago, as the background task in `serve` does hourly, and returns how
+    /// many it deleted. Move `clock` forward first instead of sleeping.
+    pub async fn purge_trash(&self) -> usize {
+        img_bed::trash::purge_expired(&self.state)
+            .await
+            .expect("purge")
     }
 
     pub fn config_path(&self) -> PathBuf {
