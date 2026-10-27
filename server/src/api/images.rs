@@ -1,11 +1,12 @@
-//! `api/v1/images`: uploading Images.
+//! `api/v1/images`: uploading Images, the Library list and Image detail.
 
 use axum::Json;
-use axum::extract::State;
 use axum::extract::multipart::{Multipart, MultipartError, MultipartRejection};
+use axum::extract::rejection::QueryRejection;
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::auth::Owner;
@@ -34,6 +35,8 @@ pub struct ImageView {
     pub original_filename: String,
     /// Unix seconds.
     pub uploaded_at: i64,
+    /// Unix seconds; `null` unless the Image is in the Trash.
+    pub trashed_at: Option<i64>,
     /// The Primary Path and its full URL.
     pub path: String,
     pub url: String,
@@ -66,6 +69,7 @@ impl ImageView {
             height: image.height,
             original_filename: image.original_filename,
             uploaded_at: image.uploaded_at,
+            trashed_at: image.trashed_at,
             path: primary.0,
             url: primary.1,
             paths,
@@ -85,7 +89,7 @@ pub enum UploadResult {
         /// For a Duplicate Upload, when the existing Image was first
         /// uploaded (unix seconds); `null` for a new Image.
         original_uploaded_at: Option<i64>,
-        image: ImageView,
+        image: Box<ImageView>,
     },
     Failed {
         filename: String,
@@ -153,7 +157,7 @@ pub async fn upload(
                     filename,
                     duplicate: ingested.duplicate,
                     original_uploaded_at,
-                    image: ImageView::new(ingested.image, &state.config.public_url),
+                    image: Box::new(ImageView::new(ingested.image, &state.config.public_url)),
                 });
             }
             Err(ApiError::Internal(e)) => return Err(ApiError::Internal(e)),
@@ -196,4 +200,86 @@ fn multipart_error(e: MultipartError, limit: u64) -> ApiError {
     } else {
         ApiError::BadRequest(format!("invalid upload: {}", e.body_text()))
     }
+}
+
+/// Images per Library page unless `per_page` says otherwise.
+pub const DEFAULT_PER_PAGE: i64 = 60;
+/// The largest accepted `per_page`.
+pub const MAX_PER_PAGE: i64 = 200;
+
+#[derive(Deserialize)]
+pub struct ListQuery {
+    /// 1-based page number.
+    page: Option<i64>,
+    per_page: Option<i64>,
+    /// Keeps Images whose original filename or any Path contains this text
+    /// (ASCII case ignored). Blank means no search.
+    q: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct ListResponse {
+    pub images: Vec<ImageView>,
+    pub page: i64,
+    pub per_page: i64,
+    /// Images matching the search across all pages.
+    pub total: i64,
+    /// Pages for `total` at `per_page` (0 when nothing matches).
+    pub pages: i64,
+    /// Library totals, independent of the search.
+    pub stats: store::Stats,
+}
+
+/// `GET /api/v1/images?page=&per_page=&q=`: the Library, newest first.
+///
+/// Offset paging by page number: the Owner jumps between numbered pages,
+/// and the Library changes rarely enough that an upload shifting a page by
+/// one Image is harmless. Trashed Images are left out.
+pub async fn list(
+    State(state): State<AppState>,
+    _owner: Owner,
+    query: Result<Query<ListQuery>, QueryRejection>,
+) -> Result<Json<ListResponse>, ApiError> {
+    let Query(query) = query.map_err(|e| ApiError::BadRequest(e.body_text()))?;
+    let page = query.page.unwrap_or(1);
+    if page < 1 {
+        return Err(ApiError::BadRequest("page must be 1 or more".into()));
+    }
+    let per_page = query.per_page.unwrap_or(DEFAULT_PER_PAGE);
+    if !(1..=MAX_PER_PAGE).contains(&per_page) {
+        return Err(ApiError::BadRequest(format!(
+            "per_page must be between 1 and {MAX_PER_PAGE}"
+        )));
+    }
+    let search = query.q.as_deref().map(str::trim).filter(|q| !q.is_empty());
+    let offset = (page - 1).saturating_mul(per_page);
+    let result = store::list_library(&state.db, search, per_page, offset).await?;
+    let stats = store::stats(&state.db).await?;
+    let public_url = &state.config.public_url;
+    Ok(Json(ListResponse {
+        images: result
+            .images
+            .into_iter()
+            .map(|image| ImageView::new(image, public_url))
+            .collect(),
+        page,
+        per_page,
+        total: result.total,
+        pages: (result.total + per_page - 1) / per_page,
+        stats,
+    }))
+}
+
+/// `GET /api/v1/images/{id}`: one Image with all its Paths (Primary first).
+/// Trashed Images are found too, with `trashed_at` set; an unknown id is 404.
+pub async fn detail(
+    State(state): State<AppState>,
+    _owner: Owner,
+    Path(id): Path<String>,
+) -> Result<Json<ImageView>, ApiError> {
+    let id: i64 = id.parse().map_err(|_| ApiError::NotFound)?;
+    let image = store::find_by_id(&state.db, id)
+        .await?
+        .ok_or(ApiError::NotFound)?;
+    Ok(Json(ImageView::new(image, &state.config.public_url)))
 }

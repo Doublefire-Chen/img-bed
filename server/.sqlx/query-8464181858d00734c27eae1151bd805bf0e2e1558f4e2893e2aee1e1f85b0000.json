@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT id AS \"id!\", sha256, size, mime, width, height, original_filename, uploaded_at\n           FROM images WHERE id = ?",
+  "query": "SELECT i.id AS \"id!\", i.sha256, i.size, i.mime, i.width, i.height,\n                  i.original_filename, i.uploaded_at, i.trashed_at\n           FROM images i\n           WHERE i.trashed_at IS NULL\n             AND (?1 IS NULL\n                  OR i.original_filename LIKE ?1 ESCAPE '\\'\n                  OR EXISTS (SELECT 1 FROM paths p\n                             WHERE p.image_id = i.id AND p.path LIKE ?1 ESCAPE '\\'))\n           ORDER BY i.uploaded_at DESC, i.id DESC\n           LIMIT ?2 OFFSET ?3",
   "describe": {
     "columns": [
       {
@@ -42,21 +42,27 @@
         "name": "uploaded_at",
         "ordinal": 7,
         "type_info": "Integer"
+      },
+      {
+        "name": "trashed_at",
+        "ordinal": 8,
+        "type_info": "Integer"
       }
     ],
     "parameters": {
-      "Right": 1
+      "Right": 3
     },
     "nullable": [
-      false,
+      true,
       false,
       false,
       false,
       true,
       true,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "9537bbd53fd7b70b05487428e22cea60de7a79a1e54c92dbe8d4c06e30ab26e3"
+  "hash": "8464181858d00734c27eae1151bd805bf0e2e1558f4e2893e2aee1e1f85b0000"
 }

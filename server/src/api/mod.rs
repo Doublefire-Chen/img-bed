@@ -8,7 +8,7 @@ mod info;
 mod session;
 
 use axum::Router;
-use axum::routing::{get, post};
+use axum::routing::get;
 
 use crate::auth::Owner;
 use crate::error::ApiError;
@@ -23,7 +23,8 @@ pub fn router() -> Router<AppState> {
                 .post(session::login)
                 .delete(session::logout),
         )
-        .route("/images", post(images::upload))
+        .route("/images", get(images::list).post(images::upload))
+        .route("/images/{id}", get(images::detail))
         .method_not_allowed_fallback(method_not_allowed);
     Router::new().nest("/v1", v1).fallback(not_found)
 }

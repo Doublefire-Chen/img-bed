@@ -76,10 +76,40 @@ export interface Image {
   original_filename: string;
   /** Unix seconds. */
   uploaded_at: number;
+  /** Unix seconds; null unless the Image is in the Trash. */
+  trashed_at: number | null;
   /** The Primary Path and its URL. */
   path: string;
   url: string;
   paths: ImagePath[];
+}
+
+export interface Stats {
+  /** Images in the Library (the Trash not included). */
+  image_count: number;
+  /** Bytes of every stored file, the Trash included. */
+  disk_usage: number;
+}
+
+/** One page of the Library, newest first. */
+export interface LibraryPage {
+  images: Image[];
+  page: number;
+  per_page: number;
+  /** Images matching the search, across all pages. */
+  total: number;
+  pages: number;
+  /** Library totals, independent of the search. */
+  stats: Stats;
+}
+
+/** Query-key prefix of everything Library-related; invalidate it after a change. */
+export const LIBRARY_KEY = ["library"] as const;
+
+function libraryPage(page: number, perPage: number, search: string): Promise<LibraryPage> {
+  const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
+  if (search.trim()) params.set("q", search.trim());
+  return request<LibraryPage>("GET", `/images?${params}`);
 }
 
 /** A stored file: a new Image, or a Duplicate Upload of an existing one. */
@@ -125,6 +155,8 @@ export const api = {
     request<SessionInfo>("POST", "/session", { password, remember_me: rememberMe }),
   logout: () => request<void>("DELETE", "/session"),
   uploadFile,
+  libraryPage,
+  image: (id: number) => request<Image>("GET", `/images/${id}`),
 };
 
 export function isUnauthorized(error: unknown): boolean {

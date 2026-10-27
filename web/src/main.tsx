@@ -6,6 +6,7 @@ import { isUnauthorized } from "./api";
 import { Layout } from "./components/Layout";
 import { RequireOwner } from "./components/RequireOwner";
 import { Root } from "./components/Root";
+import { ImagePage } from "./pages/ImagePage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
@@ -44,6 +45,7 @@ const router = createBrowserRouter(
           children: [
             { index: true, element: <UploadPage /> },
             { path: "library", element: <LibraryPage /> },
+            { path: "library/:id", element: <ImagePage /> },
             { path: "*", element: <NotFoundPage /> },
           ],
         },

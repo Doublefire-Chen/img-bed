@@ -56,6 +56,8 @@ pub struct Image {
     pub original_filename: String,
     /// Unix seconds.
     pub uploaded_at: i64,
+    /// Unix seconds; `None` unless the Image is in the Trash.
+    pub trashed_at: Option<i64>,
     pub paths: Vec<ImagePath>,
 }
 
@@ -226,7 +228,8 @@ async fn find_by_sha256(db: &SqlitePool, sha256: &str) -> Result<Option<Image>, 
 /// The Image with this id and its Paths.
 pub async fn find_by_id(db: &SqlitePool, id: i64) -> Result<Option<Image>, ApiError> {
     let Some(row) = sqlx::query!(
-        r#"SELECT id AS "id!", sha256, size, mime, width, height, original_filename, uploaded_at
+        r#"SELECT id AS "id!", sha256, size, mime, width, height, original_filename, uploaded_at,
+                  trashed_at
            FROM images WHERE id = ?"#,
         id
     )
@@ -257,8 +260,135 @@ pub async fn find_by_id(db: &SqlitePool, id: i64) -> Result<Option<Image>, ApiEr
         height: row.height,
         original_filename: row.original_filename,
         uploaded_at: row.uploaded_at,
+        trashed_at: row.trashed_at,
         paths,
     }))
+}
+
+/// One page of the Library: live (not trashed) Images, newest first.
+#[derive(Debug)]
+pub struct LibraryPage {
+    pub images: Vec<Image>,
+    /// How many Images match the search across all pages.
+    pub total: i64,
+}
+
+/// Lists live Images newest first (by upload time, then by id, so Images
+/// uploaded in the same second keep a stable order), `limit` at a time from
+/// `offset`.
+///
+/// `search` keeps only Images whose original filename or any of whose Paths
+/// contains it, ignoring ASCII case. `%`, `_` and `\` in it match literally.
+pub async fn list_library(
+    db: &SqlitePool,
+    search: Option<&str>,
+    limit: i64,
+    offset: i64,
+) -> Result<LibraryPage, ApiError> {
+    let pattern = search.map(like_pattern);
+    let total = sqlx::query_scalar!(
+        r#"SELECT COUNT(*) AS "n!: i64" FROM images i
+           WHERE i.trashed_at IS NULL
+             AND (?1 IS NULL
+                  OR i.original_filename LIKE ?1 ESCAPE '\'
+                  OR EXISTS (SELECT 1 FROM paths p
+                             WHERE p.image_id = i.id AND p.path LIKE ?1 ESCAPE '\'))"#,
+        pattern
+    )
+    .fetch_one(db)
+    .await?;
+    let rows = sqlx::query!(
+        r#"SELECT i.id AS "id!", i.sha256, i.size, i.mime, i.width, i.height,
+                  i.original_filename, i.uploaded_at, i.trashed_at
+           FROM images i
+           WHERE i.trashed_at IS NULL
+             AND (?1 IS NULL
+                  OR i.original_filename LIKE ?1 ESCAPE '\'
+                  OR EXISTS (SELECT 1 FROM paths p
+                             WHERE p.image_id = i.id AND p.path LIKE ?1 ESCAPE '\'))
+           ORDER BY i.uploaded_at DESC, i.id DESC
+           LIMIT ?2 OFFSET ?3"#,
+        pattern,
+        limit,
+        offset
+    )
+    .fetch_all(db)
+    .await?;
+
+    // The Paths of every Image on the page, in one query.
+    let ids = serde_json::to_string(&rows.iter().map(|r| r.id).collect::<Vec<_>>())
+        .context("encoding image ids")?;
+    let mut paths: std::collections::HashMap<i64, Vec<ImagePath>> = Default::default();
+    for p in sqlx::query!(
+        r#"SELECT image_id, path, is_primary AS "is_primary: bool" FROM paths
+           WHERE image_id IN (SELECT value FROM json_each(?))
+           ORDER BY is_primary DESC, id"#,
+        ids
+    )
+    .fetch_all(db)
+    .await?
+    {
+        paths.entry(p.image_id).or_default().push(ImagePath {
+            path: p.path,
+            is_primary: p.is_primary,
+        });
+    }
+
+    let images = rows
+        .into_iter()
+        .map(|row| Image {
+            paths: paths.remove(&row.id).unwrap_or_default(),
+            id: row.id,
+            sha256: row.sha256,
+            size: row.size,
+            mime: row.mime,
+            width: row.width,
+            height: row.height,
+            original_filename: row.original_filename,
+            uploaded_at: row.uploaded_at,
+            trashed_at: row.trashed_at,
+        })
+        .collect();
+    Ok(LibraryPage { images, total })
+}
+
+/// A `LIKE` pattern matching `text` anywhere, with `\` as the escape
+/// character so `%` and `_` in the search match themselves.
+fn like_pattern(text: &str) -> String {
+    let mut pattern = String::with_capacity(text.len() + 2);
+    pattern.push('%');
+    for c in text.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            pattern.push('\\');
+        }
+        pattern.push(c);
+    }
+    pattern.push('%');
+    pattern
+}
+
+/// Library totals.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+pub struct Stats {
+    /// Images in the Library (the Trash not included).
+    pub image_count: i64,
+    /// Bytes of every stored file, the Trash included: its files stay on
+    /// disk until they are Permanently Deleted.
+    pub disk_usage: i64,
+}
+
+pub async fn stats(db: &SqlitePool) -> Result<Stats, ApiError> {
+    let row = sqlx::query!(
+        r#"SELECT COUNT(*) FILTER (WHERE trashed_at IS NULL) AS "image_count!: i64",
+                  COALESCE(SUM(size), 0) AS "disk_usage!: i64"
+           FROM images"#
+    )
+    .fetch_one(db)
+    .await?;
+    Ok(Stats {
+        image_count: row.image_count,
+        disk_usage: row.disk_usage,
+    })
 }
 
 /// What is needed to serve a Path to a Visitor.
@@ -327,6 +457,12 @@ mod tests {
         for p in ["administrator.png", "apix", "x/admin/y", "Admin/x", "a.png"] {
             assert!(!is_reserved(p), "{p}");
         }
+    }
+
+    #[test]
+    fn like_patterns_escape_wildcards() {
+        assert_eq!(like_pattern("cat"), "%cat%");
+        assert_eq!(like_pattern("100%_a\\b"), "%100\\%\\_a\\\\b%");
     }
 
     #[test]

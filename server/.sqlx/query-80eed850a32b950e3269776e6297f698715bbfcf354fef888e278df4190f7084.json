@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT COUNT(*) AS \"n!: i64\" FROM images i\n           WHERE i.trashed_at IS NULL\n             AND (?1 IS NULL\n                  OR i.original_filename LIKE ?1 ESCAPE '\\'\n                  OR EXISTS (SELECT 1 FROM paths p\n                             WHERE p.image_id = i.id AND p.path LIKE ?1 ESCAPE '\\'))",
+  "describe": {
+    "columns": [
+      {
+        "name": "n!: i64",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "80eed850a32b950e3269776e6297f698715bbfcf354fef888e278df4190f7084"
+}

@@ -1,7 +1,8 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, type DragEvent, useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, api, type Uploaded, isUnauthorized } from "../api";
+import { ApiError, api, LIBRARY_KEY, type Uploaded, isUnauthorized } from "../api";
 import { CopyButtons } from "../components/CopyButtons";
+import { formatDate, formatDateTime, formatSize, previewSrc } from "../format";
 import { SESSION_KEY } from "../session";
 
 /** How many files are sent at once. */
@@ -25,34 +26,6 @@ function describe(error: unknown): string {
   return "Could not reach the server.";
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-/** A date like "27 October 2026", in the browser's locale. */
-function formatDate(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
-
-function formatDateTime(unixSeconds: number): string {
-  return new Date(unixSeconds * 1000).toLocaleString();
-}
-
-/** The Path's address on this origin, for the preview (the public URL may be another host in development). */
-function previewSrc(url: string): string {
-  try {
-    return new URL(url).pathname;
-  } catch {
-    return url;
-  }
-}
-
 export function UploadPage() {
   const queryClient = useQueryClient();
   const [items, setItems] = useState<Item[]>([]);
@@ -73,7 +46,10 @@ export function UploadPage() {
       update(key, { ...base, status: "uploading" });
       api
         .uploadFile(file)
-        .then((result) => update(key, { ...base, status: "done", result }))
+        .then((result) => {
+          update(key, { ...base, status: "done", result });
+          void queryClient.invalidateQueries({ queryKey: LIBRARY_KEY });
+        })
         .catch((error: unknown) => {
           if (isUnauthorized(error)) queryClient.setQueryData(SESSION_KEY, null);
           update(key, { ...base, status: "error", message: describe(error) });

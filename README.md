@@ -73,6 +73,20 @@ created, and the result has `"duplicate": true`, the first upload's date in
 `original_uploaded_at`, and the existing Image with all its Paths. The Upload
 page shows "Already uploaded on <date>" with copy buttons for each Path.
 
+## Library
+
+The Library page lists every Image not in the Trash, newest first, 60 per
+page, with a search by Path or original filename (a case-insensitive
+substring) and the total Image count and disk usage in its header. Clicking
+an Image opens its detail view: preview, size, dimensions, type, SHA-256,
+upload date and every Path with copy buttons, the Primary Path marked.
+
+API (Owner session): `GET /api/v1/images?page=1&per_page=60&q=text` returns
+`images`, `page`, `per_page`, `total` (matches), `pages` and `stats`
+(`image_count`, and `disk_usage` in bytes, which includes the Trash's files);
+`GET /api/v1/images/{id}` returns one Image with all its Paths. `GET
+/api/v1/info` also carries `image_count` and `disk_usage` for the Owner.
+
 ## Password
 
 `img-bed set-password` sets or changes the Owner's password (minimum 8

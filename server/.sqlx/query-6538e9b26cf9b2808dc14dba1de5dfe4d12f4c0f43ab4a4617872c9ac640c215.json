@@ -1,0 +1,32 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT image_id, path, is_primary AS \"is_primary: bool\" FROM paths\n           WHERE image_id IN (SELECT value FROM json_each(?))\n           ORDER BY is_primary DESC, id",
+  "describe": {
+    "columns": [
+      {
+        "name": "image_id",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "path",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_primary: bool",
+        "ordinal": 2,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "6538e9b26cf9b2808dc14dba1de5dfe4d12f4c0f43ab4a4617872c9ac640c215"
+}
