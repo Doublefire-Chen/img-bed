@@ -15,9 +15,19 @@ pub enum ApiError {
     InvalidToken,
     #[error("wrong password")]
     WrongPassword,
+    /// The current password given when changing it is wrong. Not 401: the
+    /// session is still valid.
+    #[error("the current password is wrong")]
+    WrongCurrentPassword,
+    /// A new password shorter than [`crate::auth::MIN_PASSWORD_LEN`].
+    #[error(
+        "the new password must be at least {} characters",
+        crate::auth::MIN_PASSWORD_LEN
+    )]
+    PasswordTooShort,
     #[error("no password has been set; run `img-bed set-password` on the server")]
     NoPassword,
-    #[error("too many failed logins; try again in {retry_after_secs} seconds")]
+    #[error("too many failed password attempts; try again in {retry_after_secs} seconds")]
     TooManyAttempts { retry_after_secs: u64 },
     #[error("not found")]
     NotFound,
@@ -67,6 +77,8 @@ impl ApiError {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::InvalidToken => (StatusCode::UNAUTHORIZED, "invalid_token"),
             Self::WrongPassword => (StatusCode::UNAUTHORIZED, "wrong_password"),
+            Self::WrongCurrentPassword => (StatusCode::FORBIDDEN, "wrong_current_password"),
+            Self::PasswordTooShort => (StatusCode::BAD_REQUEST, "password_too_short"),
             Self::NoPassword => (StatusCode::UNAUTHORIZED, "no_password"),
             Self::TooManyAttempts { .. } => (StatusCode::TOO_MANY_REQUESTS, "too_many_attempts"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),

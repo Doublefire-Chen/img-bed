@@ -11,7 +11,7 @@ function describe(error: unknown): string {
       case "no_password":
         return "No password has been set yet. Run `img-bed set-password` on the server.";
       case "too_many_attempts":
-        return `Too many failed attempts. ${error.message.replace(/^too many failed logins; /, "")}`;
+        return `Too many failed attempts. ${error.message.replace(/^too many failed [^;]*; /, "")}`;
     }
     return error.message;
   }

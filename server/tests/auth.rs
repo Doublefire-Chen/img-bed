@@ -171,6 +171,7 @@ async fn protected_endpoints_return_401_without_a_session() {
     for (method, uri) in [
         (Method::GET, "/api/v1/session"),
         (Method::DELETE, "/api/v1/session"),
+        (Method::PUT, "/api/v1/session/password"),
         (Method::GET, "/api/v1/images"),
         (Method::POST, "/api/v1/images"),
         (Method::POST, "/api/v1/anything/else"),

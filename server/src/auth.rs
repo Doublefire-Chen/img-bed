@@ -2,8 +2,10 @@
 //! rate limit.
 //!
 //! - The password hash (argon2id) lives in the database and is set only by
-//!   `img-bed set-password` (see [`set_password`]). Setting it ends every
-//!   session.
+//!   `img-bed set-password` (see [`set_password`]), which ends every
+//!   session, or changed by the Owner in the admin area (see
+//!   [`change_password`]), which ends every session but the Owner's current
+//!   one. Neither revokes API Tokens.
 //! - A session is a random token in an `HttpOnly; Secure; SameSite=Strict`
 //!   cookie; only its SHA-256 is stored. It expires a fixed time after login
 //!   ([`SESSION_TTL`], or [`REMEMBER_ME_TTL`]) and never slides.
@@ -48,15 +50,48 @@ pub const LOGIN_WINDOW: Duration = Duration::minutes(15);
 // Password
 
 /// Sets (or replaces) the Owner's password and ends every existing session.
+/// Used by `img-bed set-password`.
 pub async fn set_password(
     db: &SqlitePool,
     password: &str,
     now: OffsetDateTime,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(
-        password.chars().count() >= MIN_PASSWORD_LEN,
+        password_long_enough(password),
         "the password must be at least {MIN_PASSWORD_LEN} characters"
     );
+    store_password(db, password, now, None).await?;
+    Ok(())
+}
+
+/// Replaces the Owner's password from the admin area and ends every session
+/// except `keep_session_id` (the one that asked), which keeps its original
+/// expiry. API Tokens are not affected, as with [`set_password`]. Returns how
+/// many other sessions were ended.
+///
+/// The caller has already checked the current password and the length.
+pub async fn change_password(
+    db: &SqlitePool,
+    new_password: &str,
+    now: OffsetDateTime,
+    keep_session_id: i64,
+) -> anyhow::Result<u64> {
+    store_password(db, new_password, now, Some(keep_session_id)).await
+}
+
+/// Whether `password` meets the minimum length (in characters).
+pub fn password_long_enough(password: &str) -> bool {
+    password.chars().count() >= MIN_PASSWORD_LEN
+}
+
+/// Hashes and stores the password, then deletes every session but
+/// `keep_session_id`, in one transaction. Returns the sessions deleted.
+async fn store_password(
+    db: &SqlitePool,
+    password: &str,
+    now: OffsetDateTime,
+    keep_session_id: Option<i64>,
+) -> anyhow::Result<u64> {
     let password = password.to_owned();
     let hash = tokio::task::spawn_blocking(move || hash_password(&password)).await??;
     let now = now.unix_timestamp();
@@ -71,11 +106,13 @@ pub async fn set_password(
     )
     .execute(&mut *tx)
     .await?;
-    sqlx::query!("DELETE FROM sessions")
+    // `id IS NOT ?` with NULL keeps nothing: every session ends.
+    let ended = sqlx::query!("DELETE FROM sessions WHERE id IS NOT ?", keep_session_id)
         .execute(&mut *tx)
-        .await?;
+        .await?
+        .rows_affected();
     tx.commit().await?;
-    Ok(())
+    Ok(ended)
 }
 
 fn hash_password(password: &str) -> anyhow::Result<String> {
@@ -265,7 +302,9 @@ impl FromRequestParts<AppState> for Uploader {
 // Failed-login rate limit
 
 /// Limits login attempts across the whole instance (there is one Owner, so
-/// there is one account to protect). Every attempt is counted as a failure
+/// there is one account to protect). Checking the current password when
+/// changing it counts as an attempt too, so that endpoint can't be used to
+/// guess the password either. Every attempt is counted as a failure
 /// up front and only forgiven once it succeeds, so concurrent guesses cannot
 /// slip past the limit while argon2 is busy. Kept in memory: a restart resets
 /// it, which is acceptable for a single-Owner host.

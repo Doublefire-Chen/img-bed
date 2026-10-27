@@ -1,4 +1,4 @@
-//! `api/v1/session`: log in, check the session, log out.
+//! `api/v1/session`: log in, check the session, log out, change the password.
 
 use axum::Json;
 use axum::extract::State;
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::auth::{self, Owner};
-use crate::error::ApiResult;
+use crate::error::{ApiError, ApiResult};
 use crate::state::AppState;
 
 #[derive(Deserialize)]
@@ -64,4 +64,43 @@ pub async fn logout(State(state): State<AppState>, owner: Owner) -> ApiResult<Re
         [(header::SET_COOKIE, auth::clear_session_cookie())],
     )
         .into_response())
+}
+
+#[derive(Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+#[derive(Serialize)]
+pub struct PasswordChanged {
+    /// How many other sessions were ended; the current one continues.
+    pub ended_sessions: u64,
+}
+
+/// `PUT /api/v1/session/password`: change the Owner's password. Needs the
+/// Owner's session (an API Token is refused) and the current password,
+/// which counts toward the login rate limit like a login does. Every other
+/// session ends; this one keeps its expiry. API Tokens keep working.
+pub async fn change_password(
+    State(state): State<AppState>,
+    owner: Owner,
+    Json(req): Json<ChangePasswordRequest>,
+) -> ApiResult<Json<PasswordChanged>> {
+    if !auth::password_long_enough(&req.new_password) {
+        return Err(ApiError::PasswordTooShort);
+    }
+    let now = state.now();
+    state.login_limiter.begin_attempt(now)?;
+    auth::verify_password(&state.db, &req.current_password)
+        .await
+        .map_err(|e| match e {
+            ApiError::WrongPassword => ApiError::WrongCurrentPassword,
+            e => e,
+        })?;
+    state.login_limiter.succeeded();
+
+    let ended_sessions =
+        auth::change_password(&state.db, &req.new_password, now, owner.session_id).await?;
+    Ok(Json(PasswordChanged { ended_sessions }))
 }

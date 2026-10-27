@@ -645,6 +645,24 @@ a:focus-visible {
   margin: 0 0 0.25rem;
 }
 
+.password-form {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  max-width: 400px;
+}
+
+.password-form p {
+  margin: 0;
+}
+
+.field input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
 .template-choices {
   border: none;
   margin: 1rem 0;

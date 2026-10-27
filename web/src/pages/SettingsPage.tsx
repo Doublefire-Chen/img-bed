@@ -1,10 +1,10 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
-import { ApiError, api, type Settings, SETTINGS_KEY } from "../api";
+import { ApiError, api, MIN_PASSWORD_LEN, type Settings, SETTINGS_KEY } from "../api";
 
 const CUSTOM = "custom";
 
-/** The Owner's settings; for now the Path Template. */
+/** The Owner's settings: the Path Template and the password. */
 export function SettingsPage() {
   const query = useQuery({ queryKey: SETTINGS_KEY, queryFn: api.settings });
 
@@ -20,6 +20,7 @@ export function SettingsPage() {
       ) : (
         <p className="muted">Loading…</p>
       )}
+      <ChangePasswordForm />
     </section>
   );
 }
@@ -209,5 +210,135 @@ function Variable({ name, meaning }: { name: string; meaning: string }) {
       </td>
       <td className="muted">{meaning}</td>
     </tr>
+  );
+}
+
+function describePasswordError(error: unknown): string {
+  if (error instanceof ApiError) {
+    switch (error.code) {
+      case "wrong_current_password":
+        return "The current password is wrong.";
+      case "password_too_short":
+        return `The new password must be at least ${MIN_PASSWORD_LEN} characters.`;
+      case "too_many_attempts":
+        return `Too many wrong passwords. ${error.message.replace(/^too many failed [^;]*; /, "")}`;
+    }
+    return error.message;
+  }
+  return "Could not reach the server.";
+}
+
+/** Changes the Owner's password; other sessions are signed out, this one stays. */
+function ChangePasswordForm() {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [done, setDone] = useState<number | null>(null);
+
+  const change = useMutation({
+    mutationFn: () => api.changePassword(current, next),
+    onSuccess: (data) => {
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setDone(data.ended_sessions);
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === "wrong_current_password") setCurrent("");
+    },
+  });
+
+  const edited = () => {
+    setLocalError(null);
+    setDone(null);
+    change.reset();
+  };
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    if ([...next].length < MIN_PASSWORD_LEN) {
+      setLocalError(`The new password must be at least ${MIN_PASSWORD_LEN} characters.`);
+      return;
+    }
+    if (next !== confirm) {
+      setLocalError("The new passwords do not match.");
+      return;
+    }
+    change.mutate();
+  };
+
+  const mismatch = confirm !== "" && next !== confirm;
+  const error = localError ?? (change.isError ? describePasswordError(change.error) : null);
+
+  return (
+    <form className="password-form" onSubmit={onSubmit}>
+      <h2>Change password</h2>
+      <p className="muted small">
+        Changing the password signs out every other browser. This one stays logged in. API Tokens
+        keep working; revoke them on the API Tokens page if needed.
+      </p>
+      <label className="field">
+        <span>Current password</span>
+        <input
+          type="password"
+          autoComplete="current-password"
+          required
+          value={current}
+          onChange={(e) => {
+            setCurrent(e.target.value);
+            edited();
+          }}
+        />
+      </label>
+      <label className="field">
+        <span>New password</span>
+        <input
+          type="password"
+          autoComplete="new-password"
+          required
+          minLength={MIN_PASSWORD_LEN}
+          value={next}
+          onChange={(e) => {
+            setNext(e.target.value);
+            edited();
+          }}
+        />
+        <span className="muted small">At least {MIN_PASSWORD_LEN} characters.</span>
+      </label>
+      <label className="field">
+        <span>Confirm new password</span>
+        <input
+          type="password"
+          autoComplete="new-password"
+          required
+          aria-invalid={mismatch ? "true" : "false"}
+          value={confirm}
+          onChange={(e) => {
+            setConfirm(e.target.value);
+            edited();
+          }}
+        />
+        {mismatch && <span className="error small">The new passwords do not match.</span>}
+      </label>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="settings-actions">
+        <button type="submit" className="button-primary" disabled={change.isPending || mismatch}>
+          {change.isPending ? "Changing…" : "Change password"}
+        </button>
+        {done !== null && (
+          <span className="muted small" role="status">
+            Password changed.{" "}
+            {done === 0
+              ? "No other sessions were signed in."
+              : `${done} other ${done === 1 ? "session was" : "sessions were"} signed out.`}
+          </span>
+        )}
+      </div>
+    </form>
   );
 }

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "DELETE FROM sessions WHERE id IS NOT ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "8edddf2d9e13f31dd5b5fea176cc10d5f92b851afe6c8c99b7ae2c0231b78fac"
+}

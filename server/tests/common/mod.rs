@@ -408,6 +408,25 @@ impl TestApp {
         res.session().expect("login response sets a session cookie")
     }
 
+    /// `PUT /api/v1/session/password` as `session`.
+    pub async fn change_password(
+        &self,
+        session: &Session,
+        current_password: &str,
+        new_password: &str,
+    ) -> TestResponse {
+        self.request(
+            Method::PUT,
+            "/api/v1/session/password",
+            Some(session),
+            Some(serde_json::json!({
+                "current_password": current_password,
+                "new_password": new_password,
+            })),
+        )
+        .await
+    }
+
     /// Whether `session` is currently accepted by the server.
     pub async fn is_valid(&self, session: &Session) -> bool {
         let res = self.get_as("/api/v1/session", session).await;

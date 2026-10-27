@@ -58,6 +58,14 @@ export interface SessionInfo {
   expires_at: number;
 }
 
+export interface PasswordChanged {
+  /** How many other sessions were signed out. */
+  ended_sessions: number;
+}
+
+/** Minimum password length in characters, as enforced by the server. */
+export const MIN_PASSWORD_LEN = 8;
+
 export interface ImagePath {
   path: string;
   /** Full public URL: the server's public_url + "/" + the encoded Path. */
@@ -232,6 +240,12 @@ export const api = {
   login: (password: string, rememberMe: boolean) =>
     request<SessionInfo>("POST", "/session", { password, remember_me: rememberMe }),
   logout: () => request<void>("DELETE", "/session"),
+  /** Changes the Owner's password; every other session ends, this one continues. */
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<PasswordChanged>("PUT", "/session/password", {
+      current_password: currentPassword,
+      new_password: newPassword,
+    }),
   uploadFile,
   libraryPage,
   image: (id: number) => request<Image>("GET", `/images/${id}`),

@@ -301,6 +301,11 @@ async fn a_token_is_refused_on_every_other_endpoint() {
         // Session
         (Method::GET, "/api/v1/session".into(), None),
         (Method::DELETE, "/api/v1/session".into(), None),
+        (
+            Method::PUT,
+            "/api/v1/session/password".into(),
+            Some(json!({ "current_password": "x", "new_password": "long enough" })),
+        ),
         // Unknown paths and methods
         (Method::GET, "/api/v1/nope".into(), None),
         (Method::PATCH, "/api/v1/images".into(), None),
@@ -411,7 +416,9 @@ async fn invalid_tokens_are_refused() {
     let (_, secret) = app.create_token_ok(&session, "real").await;
     let bytes = png(2, 2, "x");
     let without_prefix = secret.trim_start_matches("imgbed_").to_owned();
-    let altered = format!("{}A", &secret[..secret.len() - 1]);
+    // Change the last character (to one it isn't already).
+    let last = if secret.ends_with('A') { 'B' } else { 'A' };
+    let altered = format!("{}{last}", &secret[..secret.len() - 1]);
     for bad in [
         "imgbed_not-a-real-token",
         "nonsense",

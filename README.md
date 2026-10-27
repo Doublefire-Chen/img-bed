@@ -198,7 +198,8 @@ API (Owner session; a token can't manage tokens):
   `token_name_taken` (409) if an active token has that name.
 - `DELETE /api/v1/tokens/{id}`: revokes it and answers the token.
 
-Tokens are not affected by `set-password`, which ends sessions only.
+Tokens are not affected by changing the password (`set-password` or the
+Settings page), which ends sessions only.
 
 ## Password
 
@@ -207,6 +208,16 @@ characters) in the data directory's database and ends every existing session.
 There is no first-run web page: until it has been run, nobody can log in. It
 reads the password from a terminal prompt, or from the first line of standard
 input when that is not a terminal.
+
+Once logged in, the Owner can also change it on the Settings page (current
+password, then the new one twice). That signs out every other session; the
+current one stays logged in until its original expiry. API:
+`PUT /api/v1/session/password` with
+`{"current_password": "...", "new_password": "..."}` (Owner session only;
+API Tokens are refused) answers `{"ended_sessions": n}`. Errors:
+`wrong_current_password` (403), `password_too_short` (400), and
+`too_many_attempts` (429): a wrong current password counts toward the same
+failed-login limit as logging in (5 per 15 minutes).
 
 ## Changing queries or migrations
 
