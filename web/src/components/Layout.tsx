@@ -2,7 +2,7 @@ import { NavLink, Outlet } from "react-router";
 import { useLogout } from "../session";
 
 // Sections arrive in later slices; until then they are shown but disabled.
-const upcoming = ["Trash", "API Tokens", "Settings"];
+const upcoming = ["Trash", "API Tokens"];
 
 export function Layout() {
   const logout = useLogout();
@@ -23,6 +23,7 @@ export function Layout() {
               {label}
             </span>
           ))}
+          <NavLink to="/settings">Settings</NavLink>
         </nav>
         <button
           type="button"

@@ -639,3 +639,106 @@ a:focus-visible {
 .path-input:has(input[aria-invalid="true"]) {
   border-color: var(--danger);
 }
+
+/* Settings */
+
+.settings-section {
+  max-width: 720px;
+}
+
+.settings-section h2 {
+  font-size: 1.15rem;
+  margin: 0 0 0.25rem;
+}
+
+.template-choices {
+  border: none;
+  margin: 1rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.template-choice {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.template-choice-selected {
+  border-color: var(--accent);
+}
+
+.template-choice input[type="radio"] {
+  margin-top: 0.3rem;
+}
+
+.template-choice-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.template-choice-body code {
+  overflow-wrap: anywhere;
+}
+
+.template-input {
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.template-input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.template-preview {
+  margin: 1rem 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.template-preview p {
+  margin: 0;
+}
+
+.template-preview code {
+  overflow-wrap: anywhere;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.variables {
+  margin: 1.5rem 0 0;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.variables td {
+  padding: 0.2rem 1rem 0.2rem 0;
+  vertical-align: top;
+}
+
+.variables caption {
+  text-align: left;
+}

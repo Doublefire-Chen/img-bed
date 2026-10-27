@@ -14,7 +14,7 @@
 //! app.clock.advance(Duration::hours(24));
 //! ```
 //!
-//! Options (Path Template, upload limit, public URL) go through
+//! Options (stored Path Template, upload limit, public URL) go through
 //! [`TestApp::builder`]. The app's random source is a [`ScriptedRandom`]
 //! (`app.random`): push bytes into it to force the next `{random:N}` draws,
 //! e.g. to make a Path collide or hit a Reserved Prefix.
@@ -60,7 +60,6 @@ pub struct TestApp {
     pub clock: ManualClock,
     /// The app's random source; push bytes to force `{random:N}` draws.
     pub random: ScriptedRandom,
-    pub path_template: Template,
     pub config: Config,
     /// Owns the temporary directory; it is deleted when the TestApp drops.
     pub dir: Arc<TempDir>,
@@ -69,7 +68,7 @@ pub struct TestApp {
 /// Options for a [`TestApp`]; see [`TestApp::builder`].
 pub struct TestAppBuilder {
     password: Option<String>,
-    path_template: Template,
+    path_template: Option<Template>,
     upload_limit_mb: u64,
 }
 
@@ -80,9 +79,10 @@ impl TestAppBuilder {
         self
     }
 
-    /// Replaces the Path Template (the default is `{random:6}.{ext}`).
+    /// Stores a Path Template in the settings before the app starts, as if
+    /// the Owner had saved it (the default is `{random:6}.{ext}`).
     pub fn path_template(mut self, template: &str) -> Self {
-        self.path_template = Template::parse(template).expect("valid test template");
+        self.path_template = Some(Template::parse(template).expect("valid test template"));
         self
     }
 
@@ -109,14 +109,18 @@ impl TestAppBuilder {
         .unwrap();
         let config = Config::load(&dir.path().join("img-bed.toml")).unwrap();
         let clock = ManualClock::new(OffsetDateTime::from_unix_timestamp(START).unwrap());
-        let app = TestApp::build(
-            dir,
-            config,
-            clock,
-            ScriptedRandom::new(0),
-            self.path_template,
-        )
-        .await;
+        if let Some(template) = &self.path_template {
+            let db = img_bed::db::open(&config.data_dir).await.unwrap();
+            img_bed::settings::save_path_template(
+                &db,
+                template,
+                img_bed::clock::Clock::now(&clock),
+            )
+            .await
+            .unwrap();
+            db.close().await;
+        }
+        let app = TestApp::build(dir, config, clock, ScriptedRandom::new(0)).await;
         if let Some(password) = self.password {
             app.set_password(&password).await;
         }
@@ -128,7 +132,7 @@ impl TestApp {
     pub fn builder() -> TestAppBuilder {
         TestAppBuilder {
             password: None,
-            path_template: Template::default(),
+            path_template: None,
             upload_limit_mb: img_bed::config::DEFAULT_UPLOAD_LIMIT_MB,
         }
     }
@@ -151,7 +155,6 @@ impl TestApp {
             self.config.clone(),
             self.clock.clone(),
             self.random.clone(),
-            self.path_template.clone(),
         )
         .await
     }
@@ -161,21 +164,20 @@ impl TestApp {
         config: Config,
         clock: ManualClock,
         random: ScriptedRandom,
-        path_template: Template,
     ) -> Self {
         let db = img_bed::db::open(&config.data_dir).await.expect("open db");
-        let mut state = AppState::new(
+        let state = AppState::load(
             config.clone(),
             db,
             Arc::new(clock.clone()),
             Arc::new(random.clone()),
-        );
-        state.path_template = Arc::new(path_template.clone());
+        )
+        .await
+        .expect("load state");
         Self {
             router: app::router(state),
             clock,
             random,
-            path_template,
             config,
             dir,
         }

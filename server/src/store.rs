@@ -155,6 +155,7 @@ async fn insert_image(
     image: &NewImage<'_>,
     facts: &UploadFacts<'_>,
 ) -> Result<Option<i64>, ApiError> {
+    let template = crate::settings::path_template(state).await;
     let mut tx = state.db.begin().await?;
     let id = sqlx::query_scalar!(
         r#"INSERT INTO images (sha256, size, mime, width, height, original_filename, uploaded_at)
@@ -175,7 +176,7 @@ async fn insert_image(
         return Ok(None);
     };
 
-    let template = state.path_template.as_ref();
+    let template = template.as_ref();
     for _ in 0..MAX_PATH_DRAWS {
         let candidate = template.render(facts, state.random.as_ref());
         if path::is_reserved(&candidate) {

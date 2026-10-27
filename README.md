@@ -64,7 +64,8 @@ per file in `results`.
 
 Only JPEG, PNG, GIF, WebP, AVIF and SVG are accepted, judged by content. Files
 are stored unmodified under `data_dir/images/` by SHA-256, and each new Image
-gets a first Path from the Path Template (`{random:6}.{ext}`). Every Path
+gets a first Path from the Path Template (see Settings; `{random:6}.{ext}` by
+default). Every Path
 outside the Reserved Prefixes `admin/` and `api/` serves its Image directly
 with the headers required by [ADR 0001](docs/adr/0001-admin-on-image-origin.md).
 
@@ -106,6 +107,29 @@ API (Owner session), each answering the updated Image:
 - `PUT /api/v1/images/{id}/primary` with `{"path": "cat.png"}`.
 
 A Path that is not one of the Image's answers 404.
+
+## Settings
+
+The Settings page chooses the Path Template: one of the Presets Short
+`{random:6}`, Short with extension `{random:6}.{ext}` (the default), Dated
+`{Y}/{m}/{d}/{random:13}.{ext}` and Filename `{name}-{random:4}.{ext}`, or a
+Custom template, with an example Path for each. It is stored in the database
+and applies from the next upload on; existing Paths never change. Variables:
+`{random:N}`, `{hash:N}` (N from 1 to 64), `{Y}`, `{m}`, `{d}`, `{name}`,
+`{ext}`; a template must contain `{random:N}` or `{hash:N}`.
+
+API (Owner session):
+
+- `GET /api/v1/settings`: `path_template`, `preset` (its id, or null for
+  Custom), `example`, and `presets` (`id`, `name`, `template`, `example`).
+- `PUT /api/v1/settings` with `{"path_template": "..."}`: saves it and answers
+  like `GET`.
+- `POST /api/v1/settings/preview` with `{"path_template": "..."}`: checks it
+  without saving and answers `path_template`, `preset` and `example`.
+
+Errors (400): `template_not_unique` (neither `{random:N}` nor `{hash:N}`),
+`unknown_variable`, `invalid_template` (anything else, e.g. bad characters,
+a missing length, a leading `api/` or `admin/`).
 
 ## Password
 

@@ -32,6 +32,10 @@ pub const BASE62: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijkl
 /// The longest `{random:N}` / `{hash:N}`.
 pub const MAX_LEN: usize = 64;
 
+/// The longest template source, in characters (the longest Path the Owner
+/// may add by hand).
+pub const MAX_TEMPLATE_CHARS: usize = path::MAX_PATH_CHARS;
+
 /// Longest `{name}` output, in characters.
 pub const MAX_NAME_CHARS: usize = 64;
 
@@ -97,6 +101,12 @@ pub enum TemplateError {
     BadSlash,
     #[error("the template must not contain '.' or '..' segments")]
     DotSegment,
+    #[error(
+        "the template starts with the Reserved Prefix {0}/, so every Path it makes would be refused"
+    )]
+    Reserved(String),
+    #[error("the template is longer than {MAX_TEMPLATE_CHARS} characters")]
+    TooLong,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -129,6 +139,9 @@ impl Template {
     pub fn parse(source: &str) -> Result<Self, TemplateError> {
         if source.is_empty() {
             return Err(TemplateError::Empty);
+        }
+        if source.chars().count() > MAX_TEMPLATE_CHARS {
+            return Err(TemplateError::TooLong);
         }
         if path::has_bad_slash(source) {
             return Err(TemplateError::BadSlash);
@@ -164,6 +177,14 @@ impl Template {
         if !literal.is_empty() {
             parts.push(Part::Literal(literal));
         }
+        // A first segment spelled out as a Reserved Prefix (`api/...`) would
+        // make every render collide; `api{random:6}` is fine.
+        if let Some(Part::Literal(first)) = parts.first()
+            && let Some((segment, _)) = first.split_once('/')
+            && path::RESERVED_PREFIXES.contains(&segment)
+        {
+            return Err(TemplateError::Reserved(segment.to_owned()));
+        }
         if !parts
             .iter()
             .any(|p| matches!(p, Part::Random(_) | Part::Hash(_)))
@@ -178,6 +199,11 @@ impl Template {
 
     pub fn as_str(&self) -> &str {
         &self.source
+    }
+
+    /// The Preset this template is, if any.
+    pub fn preset(&self) -> Option<&'static Preset> {
+        PRESETS.iter().find(|p| p.template == self.source)
     }
 
     /// Renders one candidate Path (without a leading `/`). Each call draws
@@ -413,8 +439,34 @@ mod tests {
     }
 
     #[test]
+    fn templates_near_reserved_prefixes_are_allowed() {
+        for template in [
+            "api{random:6}",
+            "apix/{random:6}",
+            "{random:3}/api/x",
+            "x/admin/{hash:4}",
+        ] {
+            assert!(Template::parse(template).is_ok(), "{template}");
+        }
+        let at_limit = format!("{{random:6}}{}", "a".repeat(MAX_TEMPLATE_CHARS - 10));
+        assert!(Template::parse(&at_limit).is_ok());
+    }
+
+    #[test]
+    fn preset_matches_only_exact_preset_templates() {
+        for preset in &PRESETS {
+            assert_eq!(
+                Template::parse(preset.template).unwrap().preset(),
+                Some(preset)
+            );
+        }
+        assert_eq!(Template::parse("{random:7}.{ext}").unwrap().preset(), None);
+    }
+
+    #[test]
     fn invalid_templates_are_rejected() {
         use TemplateError::*;
+        let long = format!("{{random:6}}{}", "a".repeat(250));
         let cases = [
             ("", Empty),
             ("{name}.{ext}", NoUniquePart),
@@ -434,6 +486,9 @@ mod tests {
             ("a//{random:6}", BadSlash),
             ("../{random:6}", DotSegment),
             ("{random:6}/.", DotSegment),
+            ("api/{random:6}", Reserved("api".into())),
+            ("admin/x/{random:6}", Reserved("admin".into())),
+            (&long, TooLong),
         ];
         for (template, error) in cases {
             assert_eq!(Template::parse(template), Err(error), "{template:?}");

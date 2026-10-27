@@ -148,6 +148,32 @@ async function uploadFile(file: File): Promise<Uploaded> {
   };
 }
 
+/** A ready-made Path Template. */
+export interface Preset {
+  id: string;
+  name: string;
+  template: string;
+  /** An example Path it makes for an upload of "holiday photo.jpg" now. */
+  example: string;
+}
+
+export interface Settings {
+  /** The Path Template new uploads get their first Path from. */
+  path_template: string;
+  /** The Preset the template is, or null for a Custom template. */
+  preset: string | null;
+  example: string;
+  presets: Preset[];
+}
+
+export interface TemplatePreview {
+  path_template: string;
+  preset: string | null;
+  example: string;
+}
+
+export const SETTINGS_KEY = ["settings"] as const;
+
 export const api = {
   info: () => request<Info>("GET", "/info"),
   session: () => request<SessionInfo>("GET", "/session"),
@@ -161,6 +187,11 @@ export const api = {
   removePath: (id: number, path: string) =>
     request<Image>("DELETE", `/images/${id}/paths/${encodePath(path)}`),
   setPrimary: (id: number, path: string) => request<Image>("PUT", `/images/${id}/primary`, { path }),
+  settings: () => request<Settings>("GET", "/settings"),
+  savePathTemplate: (template: string) =>
+    request<Settings>("PUT", "/settings", { path_template: template }),
+  previewPathTemplate: (template: string) =>
+    request<TemplatePreview>("POST", "/settings/preview", { path_template: template }),
 };
 
 /** Percent-encodes each segment of a Path, keeping the `/` between them. */

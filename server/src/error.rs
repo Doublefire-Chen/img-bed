@@ -38,6 +38,9 @@ pub enum ApiError {
     /// Removing the Path would leave the Image without one.
     #[error("/{0} is the Image's only Path and cannot be removed")]
     LastPath(String),
+    /// A Path Template the Owner tried to save or preview is invalid.
+    #[error("{0}")]
+    InvalidTemplate(#[from] crate::path_template::TemplateError),
     #[error("internal error")]
     Internal(#[from] anyhow::Error),
 }
@@ -58,6 +61,15 @@ impl ApiError {
             Self::ReservedPath(_) => (StatusCode::BAD_REQUEST, "reserved_path"),
             Self::PathTaken { .. } => (StatusCode::CONFLICT, "path_taken"),
             Self::LastPath(_) => (StatusCode::CONFLICT, "last_path"),
+            Self::InvalidTemplate(e) => {
+                use crate::path_template::TemplateError;
+                let code = match e {
+                    TemplateError::NoUniquePart => "template_not_unique",
+                    TemplateError::UnknownVariable(_) => "unknown_variable",
+                    _ => "invalid_template",
+                };
+                (StatusCode::BAD_REQUEST, code)
+            }
             Self::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }
     }

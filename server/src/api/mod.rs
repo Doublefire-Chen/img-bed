@@ -6,6 +6,7 @@
 pub mod images;
 mod info;
 mod session;
+mod settings;
 
 use axum::Router;
 use axum::routing::{delete, get, post, put};
@@ -28,6 +29,8 @@ pub fn router() -> Router<AppState> {
         .route("/images/{id}/paths", post(images::add_path))
         .route("/images/{id}/paths/{*path}", delete(images::remove_path))
         .route("/images/{id}/primary", put(images::set_primary))
+        .route("/settings", get(settings::get).put(settings::update))
+        .route("/settings/preview", post(settings::preview))
         .method_not_allowed_fallback(method_not_allowed);
     Router::new().nest("/v1", v1).fallback(not_found)
 }

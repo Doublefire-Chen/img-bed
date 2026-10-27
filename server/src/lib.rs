@@ -18,6 +18,7 @@ pub mod path;
 pub mod path_template;
 pub mod random;
 pub mod serve;
+pub mod settings;
 pub mod state;
 pub mod store;
 
