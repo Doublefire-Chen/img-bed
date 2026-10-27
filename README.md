@@ -68,6 +68,11 @@ gets a first Path from the Path Template (`{random:6}.{ext}`). Every Path
 outside the Reserved Prefixes `admin/` and `api/` serves its Image directly
 with the headers required by [ADR 0001](docs/adr/0001-admin-on-image-origin.md).
 
+Uploading bytes that are already stored is a Duplicate Upload: nothing new is
+created, and the result has `"duplicate": true`, the first upload's date in
+`original_uploaded_at`, and the existing Image with all its Paths. The Upload
+page shows "Already uploaded on <date>" with copy buttons for each Path.
+
 ## Password
 
 `img-bed set-password` sets or changes the Owner's password (minimum 8

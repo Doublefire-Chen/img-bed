@@ -337,3 +337,37 @@ a:focus-visible {
   gap: 0.4rem;
   align-items: center;
 }
+
+.result-duplicate {
+  border-color: color-mix(in srgb, var(--warning-text) 35%, var(--border));
+}
+
+.notice {
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  border-radius: calc(var(--radius) / 2);
+  padding: 0.35rem 0.6rem;
+}
+
+.path-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.path-links li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.badge {
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+}

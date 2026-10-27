@@ -82,12 +82,21 @@ export interface Image {
   paths: ImagePath[];
 }
 
+/** A stored file: a new Image, or a Duplicate Upload of an existing one. */
+export interface Uploaded {
+  /** The bytes matched an existing Image; nothing new was created. */
+  duplicate: boolean;
+  /** For a Duplicate Upload, when the Image was first uploaded (unix seconds); otherwise null. */
+  original_uploaded_at: number | null;
+  image: Image;
+}
+
 export type UploadResult =
-  | { filename: string; duplicate: boolean; image: Image }
+  | ({ filename: string } & Uploaded)
   | { filename: string; error: { code: string; message: string } };
 
-/** Uploads one file; resolves with its Image or throws an ApiError. */
-async function uploadFile(file: File): Promise<{ image: Image; duplicate: boolean }> {
+/** Uploads one file; resolves with its outcome or throws an ApiError. */
+async function uploadFile(file: File): Promise<Uploaded> {
   const form = new FormData();
   form.append("file", file, file.name);
   const response = await fetch("/api/v1/images", {
@@ -102,7 +111,11 @@ async function uploadFile(file: File): Promise<{ image: Image; duplicate: boolea
   const result = data.results[0];
   if (!result) throw new ApiError(500, "no_result", "the server returned no result");
   if ("error" in result) throw new ApiError(400, result.error.code, result.error.message);
-  return { image: result.image, duplicate: result.duplicate };
+  return {
+    duplicate: result.duplicate,
+    original_uploaded_at: result.original_uploaded_at,
+    image: result.image,
+  };
 }
 
 export const api = {

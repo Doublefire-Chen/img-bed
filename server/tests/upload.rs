@@ -7,6 +7,7 @@ use axum::http::{Method, Request, StatusCode, header};
 use common::fixtures::{self, png};
 use common::{PUBLIC_URL, TestApp};
 use serde_json::Value;
+use time::Duration;
 
 const PASSWORD: &str = "correct horse battery";
 
@@ -38,6 +39,7 @@ async fn upload_returns_the_image_with_its_path_and_full_url() {
     let result = &results[0];
     assert_eq!(result["filename"], "Holiday Photo.png");
     assert_eq!(result["duplicate"], false);
+    assert!(result["original_uploaded_at"].is_null());
 
     let image = &result["image"];
     let path = image["path"].as_str().unwrap();
@@ -296,18 +298,102 @@ async fn a_path_under_a_reserved_prefix_is_silently_redrawn() {
 }
 
 #[tokio::test]
-async fn uploading_the_same_bytes_again_returns_the_existing_image() {
+async fn uploading_the_same_bytes_again_is_a_duplicate_upload_of_the_existing_image() {
     let (app, session) = app_and_session().await;
     let bytes = png(1, 1, "same");
     let first = app.upload_ok(&session, "one.png", &bytes).await;
+
+    app.clock.advance(Duration::hours(1));
     let res = app.upload_as(&session, &[("two.png", &bytes)]).await;
-    assert_eq!(res.status, StatusCode::OK);
+    assert_eq!(res.status, StatusCode::OK, "{}", res.text());
     let result = &res.json()["results"][0];
+    assert_eq!(result["filename"], "two.png");
     assert_eq!(result["duplicate"], true);
-    assert_eq!(result["image"]["id"], first["id"]);
-    assert_eq!(result["image"]["path"], first["path"]);
+    // The first upload's date, not now.
+    assert_eq!(result["original_uploaded_at"], common::START);
+    // The existing Image, unchanged: same id, record, Paths and URLs.
+    assert_eq!(result["image"], first);
+    assert_eq!(result["image"]["uploaded_at"], common::START);
     assert_eq!(result["image"]["original_filename"], "one.png");
+}
+
+#[tokio::test]
+async fn a_duplicate_upload_lists_the_existing_paths_with_urls_and_the_primary() {
+    let (app, session) = app_and_session().await;
+    let bytes = png(1, 1, "paths");
+    let first = app.upload_ok(&session, "a.png", &bytes).await;
+    let path = first["path"].as_str().unwrap();
+
+    let res = app.upload_as(&session, &[("a.png", &bytes)]).await;
+    let image = &res.json()["results"][0]["image"];
+    assert_eq!(image["path"], path);
+    assert_eq!(image["url"], format!("{PUBLIC_URL}/{path}"));
+    assert_eq!(
+        image["paths"],
+        serde_json::json!([{
+            "path": path,
+            "url": format!("{PUBLIC_URL}/{path}"),
+            "is_primary": true,
+        }])
+    );
+}
+
+#[tokio::test]
+async fn a_duplicate_upload_creates_no_path_and_no_file() {
+    let (app, session) = app_and_session().await;
+    let bytes = png(1, 1, "nothing new");
+    let first = app.upload_ok(&session, "a.png", &bytes).await;
+    let files = app.stored_files();
+    assert_eq!(files.len(), 1);
+
+    // Had a Path been drawn for the duplicate, it would be this one.
+    app.random.push_base62("Dup123");
+    let res = app.upload_as(&session, &[("b.png", &bytes)]).await;
+    let image = &res.json()["results"][0]["image"];
+    assert_eq!(image["paths"].as_array().unwrap().len(), 1);
+    assert_eq!(image["paths"], first["paths"]);
+    assert_eq!(app.get("/Dup123.png").await.status, StatusCode::NOT_FOUND);
+    assert_eq!(app.stored_files(), files);
+    // The existing Path still serves the Image.
+    let served = app
+        .get(&format!("/{}", first["path"].as_str().unwrap()))
+        .await;
+    assert_eq!(&served.body[..], &bytes[..]);
+}
+
+#[tokio::test]
+async fn the_same_bytes_twice_in_one_request_yield_one_image() {
+    let (app, session) = app_and_session().await;
+    let bytes = png(2, 2, "twice");
+    let res = app
+        .upload_as(&session, &[("a.png", &bytes), ("b.png", &bytes)])
+        .await;
+    assert_eq!(res.status, StatusCode::OK, "{}", res.text());
+    let body = res.json();
+    let (a, b) = (&body["results"][0], &body["results"][1]);
+    assert_eq!(a["duplicate"], false);
+    assert_eq!(b["duplicate"], true);
+    assert_eq!(b["original_uploaded_at"], a["image"]["uploaded_at"]);
+    assert_eq!(b["image"], a["image"]);
     assert_eq!(app.stored_files().len(), 1);
+}
+
+#[tokio::test]
+async fn a_different_file_with_the_same_filename_is_not_a_duplicate() {
+    let (app, session) = app_and_session().await;
+    let first = app
+        .upload_ok(&session, "photo.png", &png(1, 1, "one"))
+        .await;
+    let res = app
+        .upload_as(&session, &[("photo.png", &png(1, 1, "two"))])
+        .await;
+    let result = &res.json()["results"][0];
+    assert_eq!(result["duplicate"], false);
+    assert!(result["original_uploaded_at"].is_null());
+    assert_ne!(result["image"]["id"], first["id"]);
+    assert_ne!(result["image"]["sha256"], first["sha256"]);
+    assert_ne!(result["image"]["path"], first["path"]);
+    assert_eq!(app.stored_files().len(), 2);
 }
 
 #[tokio::test]

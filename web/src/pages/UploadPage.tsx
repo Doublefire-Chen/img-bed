@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, type DragEvent, useCallback, useEffect, useRef, useState } from "react";
-import { ApiError, api, type Image, isUnauthorized } from "../api";
+import { ApiError, api, type Uploaded, isUnauthorized } from "../api";
 import { CopyButtons } from "../components/CopyButtons";
 import { SESSION_KEY } from "../session";
 
@@ -9,7 +9,7 @@ const PARALLEL_UPLOADS = 3;
 
 type Item =
   | { key: number; name: string; size: number; status: "waiting" | "uploading" }
-  | { key: number; name: string; size: number; status: "done"; image: Image }
+  | { key: number; name: string; size: number; status: "done"; result: Uploaded }
   | { key: number; name: string; size: number; status: "error"; message: string };
 
 function describe(error: unknown): string {
@@ -29,6 +29,19 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/** A date like "27 October 2026", in the browser's locale. */
+function formatDate(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function formatDateTime(unixSeconds: number): string {
+  return new Date(unixSeconds * 1000).toLocaleString();
 }
 
 /** The Path's address on this origin, for the preview (the public URL may be another host in development). */
@@ -60,7 +73,7 @@ export function UploadPage() {
       update(key, { ...base, status: "uploading" });
       api
         .uploadFile(file)
-        .then(({ image }) => update(key, { ...base, status: "done", image }))
+        .then((result) => update(key, { ...base, status: "done", result }))
         .catch((error: unknown) => {
           if (isUnauthorized(error)) queryClient.setQueryData(SESSION_KEY, null);
           update(key, { ...base, status: "error", message: describe(error) });
@@ -176,9 +189,14 @@ export function UploadPage() {
           </div>
           <ul className="results">
             {items.map((item) => (
-              <li key={item.key} className={`result result-${item.status}`}>
+              <li
+                key={item.key}
+                className={`result result-${item.status}${
+                  item.status === "done" && item.result.duplicate ? " result-duplicate" : ""
+                }`}
+              >
                 {item.status === "done" ? (
-                  <img className="thumb" src={previewSrc(item.image.url)} alt="" loading="lazy" />
+                  <img className="thumb" src={previewSrc(item.result.image.url)} alt="" loading="lazy" />
                 ) : (
                   <div className="thumb thumb-empty" aria-hidden="true" />
                 )}
@@ -193,21 +211,7 @@ export function UploadPage() {
                       {item.message}
                     </p>
                   )}
-                  {item.status === "done" && (
-                    <>
-                      <p className="result-path">
-                        <code>/{item.image.path}</code>
-                      </p>
-                      <input
-                        className="result-url"
-                        readOnly
-                        value={item.image.url}
-                        aria-label={`URL of ${item.name}`}
-                        onFocus={(e) => e.target.select()}
-                      />
-                      <CopyButtons url={item.image.url} />
-                    </>
-                  )}
+                  {item.status === "done" && <UploadedLinks name={item.name} result={item.result} />}
                 </div>
               </li>
             ))}
@@ -215,5 +219,49 @@ export function UploadPage() {
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * The links of a stored file: its Path for a new Image, or, for a Duplicate
+ * Upload, an "Already uploaded" notice and every existing Path (Primary first).
+ */
+function UploadedLinks({ name, result }: { name: string; result: Uploaded }) {
+  const { image } = result;
+  const paths = result.duplicate ? image.paths : image.paths.filter((p) => p.is_primary);
+  const shown = paths.length > 0 ? paths : [{ path: image.path, url: image.url, is_primary: true }];
+  const uploadedAt = result.original_uploaded_at ?? image.uploaded_at;
+  return (
+    <>
+      {result.duplicate && (
+        <p className="notice small" role="status">
+          Already uploaded on <time title={formatDateTime(uploadedAt)}>{formatDate(uploadedAt)}</time>
+          {image.original_filename && image.original_filename !== name && (
+            <> as {image.original_filename}</>
+          )}
+          . Nothing new was created; use {shown.length === 1 ? "its existing Path" : "one of its existing Paths"}.
+        </p>
+      )}
+      <ul className="path-links">
+        {shown.map((p) => (
+          <li key={p.path}>
+            <p className="result-path">
+              <code>/{p.path}</code>
+              {result.duplicate && shown.length > 1 && p.is_primary && (
+                <span className="badge small">Primary</span>
+              )}
+            </p>
+            <input
+              className="result-url"
+              readOnly
+              value={p.url}
+              aria-label={`URL of ${name}${shown.length > 1 ? ` at /${p.path}` : ""}`}
+              onFocus={(e) => e.target.select()}
+            />
+            <CopyButtons url={p.url} />
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

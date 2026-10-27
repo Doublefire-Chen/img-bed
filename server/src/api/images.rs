@@ -79,8 +79,12 @@ impl ImageView {
 pub enum UploadResult {
     Stored {
         filename: String,
-        /// The bytes matched an existing Image; it is returned unchanged.
+        /// A Duplicate Upload: the bytes matched an existing Image, which is
+        /// returned unchanged with its existing Paths. Nothing was created.
         duplicate: bool,
+        /// For a Duplicate Upload, when the existing Image was first
+        /// uploaded (unix seconds); `null` for a new Image.
+        original_uploaded_at: Option<i64>,
         image: ImageView,
     },
     Failed {
@@ -144,9 +148,11 @@ pub async fn upload(
         match outcome {
             Ok(ingested) => {
                 any_stored = true;
+                let original_uploaded_at = ingested.duplicate.then_some(ingested.image.uploaded_at);
                 results.push(UploadResult::Stored {
                     filename,
                     duplicate: ingested.duplicate,
+                    original_uploaded_at,
                     image: ImageView::new(ingested.image, &state.config.public_url),
                 });
             }

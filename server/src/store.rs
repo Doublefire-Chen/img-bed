@@ -76,8 +76,10 @@ pub struct Ingested {
 /// Stores one uploaded file: checks its size and type, writes it to disk and
 /// records the Image with its first Path from the Path Template.
 ///
-/// Identical bytes are always the same Image: uploading them again returns
-/// the existing Image with `duplicate: true`.
+/// Identical bytes are always the same Image: uploading them again is a
+/// Duplicate Upload, which returns the existing Image (with its original
+/// upload date and existing Paths) and `duplicate: true`, without writing a
+/// file, drawing a Path or touching the record.
 pub async fn ingest(
     state: &AppState,
     original_filename: &str,
@@ -92,6 +94,7 @@ pub async fn ingest(
     let image_type = ImageType::detect(&bytes).ok_or(ApiError::UnsupportedType)?;
     let sha256 = hex_sha256(&bytes);
 
+    // Checked before anything is written or a Path is drawn.
     if let Some(image) = find_by_sha256(&state.db, &sha256).await? {
         return Ok(Ingested {
             image,
