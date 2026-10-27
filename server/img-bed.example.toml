@@ -1,0 +1,15 @@
+# img-bed configuration. Every key is optional; the values below are the
+# defaults except frontend_dir. Relative paths are resolved against the
+# directory containing this file.
+
+# Address and port to listen on (put nginx in front for TLS).
+listen = "127.0.0.1:8080"
+
+# All state lives here: the SQLite database (and, later, the Image files).
+data_dir = "data"
+
+# The built admin frontend (output of `pnpm build` in web/), served at /admin/.
+frontend_dir = "../web/dist"
+
+# Largest accepted upload, in MiB. nginx's client_max_body_size must be at least this.
+upload_limit_mb = 20

@@ -30,3 +30,6 @@ web/dist/
 # Runtime data (SQLite database and uploaded images)
 data/
 *.db
+
+# Local server config (see server/img-bed.example.toml)
+/server/img-bed.toml
