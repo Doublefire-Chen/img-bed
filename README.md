@@ -45,6 +45,29 @@ proxies `/api` to `127.0.0.1:8080`. Open `http://localhost:5173/admin/`.
 The session cookie is `Secure`; browsers accept it on `http://localhost`, but in
 production serve img-bed over HTTPS (nginx terminates TLS and proxies to `listen`).
 
+## Configuration
+
+See `server/img-bed.example.toml`. Keys: `listen`, `data_dir` (database and
+Image files), `frontend_dir`, `upload_limit_mb` (largest accepted file,
+default 20) and `public_url` (scheme and host of the links handed out after
+an upload, e.g. `https://img.aka.cy`; defaults to `http://<listen>`). A request
+may carry 1 MiB of form overhead on top of the limit, so nginx's
+`client_max_body_size` must be at least `upload_limit_mb` + 1M.
+
+## Uploading and serving
+
+The admin area opens on the Upload page: drop files, paste from the clipboard
+or pick several at once; each gets its link with copy buttons (URL, Markdown,
+HTML, BBCode). The API equivalent is `POST /api/v1/images` with
+`multipart/form-data` (Owner session required for now), returning one entry
+per file in `results`.
+
+Only JPEG, PNG, GIF, WebP, AVIF and SVG are accepted, judged by content. Files
+are stored unmodified under `data_dir/images/` by SHA-256, and each new Image
+gets a first Path from the Path Template (`{random:6}.{ext}`). Every Path
+outside the Reserved Prefixes `admin/` and `api/` serves its Image directly
+with the headers required by [ADR 0001](docs/adr/0001-admin-on-image-origin.md).
+
 ## Password
 
 `img-bed set-password` sets or changes the Owner's password (minimum 8

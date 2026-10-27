@@ -1,6 +1,7 @@
+import { Link } from "react-router";
 import { useSession } from "../session";
 
-export function HomePage() {
+export function LibraryPage() {
   const { data: session } = useSession();
   const expires = session ? new Date(session.expires_at * 1000) : null;
 
@@ -8,8 +9,10 @@ export function HomePage() {
     <section>
       <h1>Library</h1>
       <div className="empty">
-        <p>No Images yet.</p>
-        <p className="muted">Uploading and browsing Images are coming soon.</p>
+        <p>Browsing Images is coming soon.</p>
+        <p className="muted">
+          Until then, links are shown right after each upload on the <Link to="/">Upload</Link> page.
+        </p>
       </div>
       {expires && (
         <p className="muted small">

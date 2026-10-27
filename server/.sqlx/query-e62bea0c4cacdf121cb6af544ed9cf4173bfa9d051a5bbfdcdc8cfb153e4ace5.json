@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO paths (path, image_id, is_primary, created_at) VALUES (?, ?, 1, ?)\n             ON CONFLICT (path) DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "e62bea0c4cacdf121cb6af544ed9cf4173bfa9d051a5bbfdcdc8cfb153e4ace5"
+}

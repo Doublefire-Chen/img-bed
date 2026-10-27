@@ -13,8 +13,12 @@ pub mod config;
 pub mod db;
 pub mod error;
 pub mod frontend;
+pub mod image_type;
+pub mod path_template;
 pub mod random;
+pub mod serve;
 pub mod state;
+pub mod store;
 
 /// The server version, reported by `GET /api/v1/info`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

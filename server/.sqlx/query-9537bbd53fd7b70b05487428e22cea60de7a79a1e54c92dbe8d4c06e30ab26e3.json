@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id AS \"id!\", sha256, size, mime, width, height, original_filename, uploaded_at\n           FROM images WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer"
+      },
+      {
+        "name": "sha256",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "size",
+        "ordinal": 2,
+        "type_info": "Integer"
+      },
+      {
+        "name": "mime",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "width",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "height",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "original_filename",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "uploaded_at",
+        "ordinal": 7,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "9537bbd53fd7b70b05487428e22cea60de7a79a1e54c92dbe8d4c06e30ab26e3"
+}

@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT path, is_primary AS \"is_primary: bool\" FROM paths\n           WHERE image_id = ? ORDER BY is_primary DESC, id",
+  "describe": {
+    "columns": [
+      {
+        "name": "path",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "is_primary: bool",
+        "ordinal": 1,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "eb1f6e45cadda1c12c12a12dd0407a91ade74cc661bbc101a0412b2e5fdbd367"
+}

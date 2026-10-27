@@ -15,8 +15,9 @@ export function Layout() {
         </NavLink>
         <nav className="nav" aria-label="Main">
           <NavLink to="/" end>
-            Library
+            Upload
           </NavLink>
+          <NavLink to="/library">Library</NavLink>
           {upcoming.map((label) => (
             <span key={label} className="nav-disabled" title="Coming soon" aria-disabled="true">
               {label}

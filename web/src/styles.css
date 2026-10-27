@@ -224,3 +224,116 @@ a:focus-visible {
 .empty p {
   margin: 0.25rem 0;
 }
+
+.button-small {
+  padding: 0.2rem 0.6rem;
+  font-size: 0.85rem;
+}
+
+/* Upload */
+
+.dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+  cursor: pointer;
+  margin-bottom: 1.5rem;
+}
+
+.dropzone p {
+  margin: 0.25rem 0;
+}
+
+.dropzone:hover,
+.dropzone:focus-visible,
+.dropzone-active {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.dropzone-active {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.results-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.results-header p {
+  margin: 0;
+}
+
+.results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.result {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+}
+
+.result-error {
+  border-color: color-mix(in srgb, var(--danger) 50%, var(--border));
+}
+
+.thumb {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border-radius: calc(var(--radius) / 2);
+  background: var(--bg);
+}
+
+.result-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.result-body p {
+  margin: 0;
+}
+
+.result-name {
+  overflow-wrap: anywhere;
+}
+
+.result-path code {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.result-url {
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+
+.copy-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}

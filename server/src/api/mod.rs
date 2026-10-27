@@ -3,23 +3,28 @@
 //! Public endpoints: `GET info`, `POST session` (login). Everything else,
 //! including unknown paths, requires an Owner session (401 otherwise).
 
+pub mod images;
 mod info;
 mod session;
 
 use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, post};
 
 use crate::auth::Owner;
 use crate::error::ApiError;
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
-    let v1 = Router::new().route("/info", get(info::info)).route(
-        "/session",
-        get(session::current)
-            .post(session::login)
-            .delete(session::logout),
-    );
+    let v1 = Router::new()
+        .route("/info", get(info::info))
+        .route(
+            "/session",
+            get(session::current)
+                .post(session::login)
+                .delete(session::logout),
+        )
+        .route("/images", post(images::upload))
+        .method_not_allowed_fallback(method_not_allowed);
     Router::new().nest("/v1", v1).fallback(not_found)
 }
 
@@ -27,4 +32,9 @@ pub fn router() -> Router<AppState> {
 /// someone without a session.
 async fn not_found(_owner: Owner) -> ApiError {
     ApiError::NotFound
+}
+
+/// Likewise for a known path with the wrong method.
+async fn method_not_allowed(_owner: Owner) -> ApiError {
+    ApiError::MethodNotAllowed
 }

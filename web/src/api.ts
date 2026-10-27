@@ -15,6 +15,24 @@ export class ApiError extends Error {
   }
 }
 
+async function errorFrom(response: Response): Promise<ApiError> {
+  let code = "http_error";
+  let message = `${response.status} ${response.statusText}`;
+  if (response.status === 413) {
+    // A proxy in front of img-bed (e.g. nginx) may refuse before img-bed sees it.
+    code = "too_large";
+    message = "file is larger than the upload limit";
+  }
+  try {
+    const data = (await response.json()) as { error?: { code?: string; message?: string } };
+    code = data.error?.code ?? code;
+    message = data.error?.message ?? message;
+  } catch {
+    // Not a JSON error body; keep the generic message.
+  }
+  return new ApiError(response.status, code, message);
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const response = await fetch(`/api/v1${path}`, {
     method,
@@ -23,16 +41,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!response.ok) {
-    let code = "http_error";
-    let message = `${response.status} ${response.statusText}`;
-    try {
-      const data = (await response.json()) as { error?: { code?: string; message?: string } };
-      code = data.error?.code ?? code;
-      message = data.error?.message ?? message;
-    } catch {
-      // Not a JSON error body; keep the generic message.
-    }
-    throw new ApiError(response.status, code, message);
+    throw await errorFrom(response);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -49,12 +58,60 @@ export interface SessionInfo {
   expires_at: number;
 }
 
+export interface ImagePath {
+  path: string;
+  /** Full public URL: the server's public_url + "/" + the encoded Path. */
+  url: string;
+  is_primary: boolean;
+}
+
+export interface Image {
+  id: number;
+  sha256: string;
+  size: number;
+  /** Detected MIME type, e.g. "image/png". */
+  type: string;
+  width: number | null;
+  height: number | null;
+  original_filename: string;
+  /** Unix seconds. */
+  uploaded_at: number;
+  /** The Primary Path and its URL. */
+  path: string;
+  url: string;
+  paths: ImagePath[];
+}
+
+export type UploadResult =
+  | { filename: string; duplicate: boolean; image: Image }
+  | { filename: string; error: { code: string; message: string } };
+
+/** Uploads one file; resolves with its Image or throws an ApiError. */
+async function uploadFile(file: File): Promise<{ image: Image; duplicate: boolean }> {
+  const form = new FormData();
+  form.append("file", file, file.name);
+  const response = await fetch("/api/v1/images", {
+    method: "POST",
+    credentials: "same-origin",
+    body: form,
+  });
+  if (!response.ok) {
+    throw await errorFrom(response);
+  }
+  const data = (await response.json()) as { results: UploadResult[] };
+  const result = data.results[0];
+  if (!result) throw new ApiError(500, "no_result", "the server returned no result");
+  if ("error" in result) throw new ApiError(400, result.error.code, result.error.message);
+  return { image: result.image, duplicate: result.duplicate };
+}
+
 export const api = {
   info: () => request<Info>("GET", "/info"),
   session: () => request<SessionInfo>("GET", "/session"),
   login: (password: string, rememberMe: boolean) =>
     request<SessionInfo>("POST", "/session", { password, remember_me: rememberMe }),
   logout: () => request<void>("DELETE", "/session"),
+  uploadFile,
 };
 
 export function isUnauthorized(error: unknown): boolean {

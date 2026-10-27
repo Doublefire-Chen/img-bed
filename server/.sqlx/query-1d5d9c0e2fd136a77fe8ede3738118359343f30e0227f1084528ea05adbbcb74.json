@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO images (sha256, size, mime, width, height, original_filename, uploaded_at)\n           VALUES (?, ?, ?, ?, ?, ?, ?)\n           ON CONFLICT (sha256) DO NOTHING\n           RETURNING id AS \"id!\"",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!",
+        "ordinal": 0,
+        "type_info": "Integer"
+      }
+    ],
+    "parameters": {
+      "Right": 7
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "1d5d9c0e2fd136a77fe8ede3738118359343f30e0227f1084528ea05adbbcb74"
+}

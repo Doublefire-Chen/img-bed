@@ -5,6 +5,7 @@
 //! data_dir = "data"
 //! frontend_dir = "../web/dist"
 //! upload_limit_mb = 20
+//! public_url = "https://img.aka.cy"
 //! ```
 //!
 //! Every key is optional. Relative paths are resolved against the directory
@@ -27,8 +28,12 @@ pub struct Config {
     pub data_dir: PathBuf,
     /// The built admin frontend (`web/dist`), served under `/admin/`.
     pub frontend_dir: PathBuf,
-    /// Maximum request body size, in bytes.
+    /// Largest accepted file, in bytes.
     pub upload_limit_bytes: u64,
+    /// Scheme and host Visitors use to reach the Images, without a trailing
+    /// `/` (e.g. `https://img.aka.cy`). Full URLs are this plus `/` plus the
+    /// Path. Defaults to `http://<listen>`.
+    pub public_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,16 +43,19 @@ struct RawConfig {
     data_dir: Option<PathBuf>,
     frontend_dir: Option<PathBuf>,
     upload_limit_mb: Option<u64>,
+    public_url: Option<String>,
 }
 
 impl Config {
     /// A config with defaults, all paths relative to `base`.
     pub fn with_base(base: &Path) -> Self {
+        let listen: SocketAddr = DEFAULT_LISTEN.parse().expect("valid default address");
         Self {
-            listen: DEFAULT_LISTEN.parse().expect("valid default address"),
+            listen,
             data_dir: base.join("data"),
             frontend_dir: base.join("web/dist"),
             upload_limit_bytes: DEFAULT_UPLOAD_LIMIT_MB * 1024 * 1024,
+            public_url: format!("http://{listen}"),
         }
     }
 
@@ -66,8 +74,23 @@ impl Config {
         let defaults = Self::with_base(base);
         let limit_mb = raw.upload_limit_mb.unwrap_or(DEFAULT_UPLOAD_LIMIT_MB);
         anyhow::ensure!(limit_mb > 0, "upload_limit_mb must be at least 1");
+        let listen = raw.listen.unwrap_or(defaults.listen);
+        let public_url = match raw.public_url {
+            Some(url) => {
+                let url = url.trim_end_matches('/').to_owned();
+                let host = url
+                    .strip_prefix("https://")
+                    .or_else(|| url.strip_prefix("http://"));
+                anyhow::ensure!(
+                    host.is_some_and(|h| !h.is_empty() && !h.contains(['/', '?', '#'])),
+                    "public_url must look like https://img.example.com (scheme and host only)"
+                );
+                url
+            }
+            None => format!("http://{listen}"),
+        };
         Ok(Self {
-            listen: raw.listen.unwrap_or(defaults.listen),
+            listen,
             data_dir: raw
                 .data_dir
                 .map(|p| base.join(p))
@@ -77,6 +100,7 @@ impl Config {
                 .map(|p| base.join(p))
                 .unwrap_or(defaults.frontend_dir),
             upload_limit_bytes: limit_mb * 1024 * 1024,
+            public_url,
         })
     }
 }
@@ -92,6 +116,19 @@ mod tests {
         assert_eq!(c.data_dir, Path::new("/srv/img-bed/data"));
         assert_eq!(c.frontend_dir, Path::new("/srv/img-bed/web/dist"));
         assert_eq!(c.upload_limit_bytes, 20 * 1024 * 1024);
+        assert_eq!(c.public_url, "http://127.0.0.1:8080");
+    }
+
+    #[test]
+    fn public_url_is_scheme_and_host() {
+        let c = Config::parse("public_url = \"https://img.aka.cy/\"", Path::new("/")).unwrap();
+        assert_eq!(c.public_url, "https://img.aka.cy");
+        let c = Config::parse("listen = \"0.0.0.0:9000\"", Path::new("/")).unwrap();
+        assert_eq!(c.public_url, "http://0.0.0.0:9000");
+        for bad in ["img.aka.cy", "ftp://x", "https://", "https://x/sub"] {
+            let text = format!("public_url = \"{bad}\"");
+            assert!(Config::parse(&text, Path::new("/")).is_err(), "{bad}");
+        }
     }
 
     #[test]

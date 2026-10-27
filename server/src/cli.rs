@@ -65,6 +65,7 @@ async fn serve(config: Config) -> anyhow::Result<()> {
         .await
         .with_context(|| format!("binding {}", config.listen))?;
     let addr = listener.local_addr()?;
+    tracing::info!("links to uploaded Images start with {}/", config.public_url);
     let state = AppState::new(config, db, Arc::new(SystemClock), Arc::new(OsRandom));
     let router = app::router(state);
     // Printed (not just logged) so scripts and tests can find the port.

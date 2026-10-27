@@ -6,9 +6,10 @@ import { isUnauthorized } from "./api";
 import { Layout } from "./components/Layout";
 import { RequireOwner } from "./components/RequireOwner";
 import { Root } from "./components/Root";
-import { HomePage } from "./pages/HomePage";
+import { LibraryPage } from "./pages/LibraryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { UploadPage } from "./pages/UploadPage";
 import { SESSION_KEY } from "./session";
 import "./styles.css";
 
@@ -41,7 +42,8 @@ const router = createBrowserRouter(
             </RequireOwner>
           ),
           children: [
-            { index: true, element: <HomePage /> },
+            { index: true, element: <UploadPage /> },
+            { path: "library", element: <LibraryPage /> },
             { path: "*", element: <NotFoundPage /> },
           ],
         },

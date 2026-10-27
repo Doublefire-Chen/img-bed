@@ -5,11 +5,16 @@
 # Address and port to listen on (put nginx in front for TLS).
 listen = "127.0.0.1:8080"
 
-# All state lives here: the SQLite database (and, later, the Image files).
+# All state lives here: the SQLite database and the Image files.
 data_dir = "data"
 
 # The built admin frontend (output of `pnpm build` in web/), served at /admin/.
 frontend_dir = "../web/dist"
 
-# Largest accepted upload, in MiB. nginx's client_max_body_size must be at least this.
+# Largest accepted file, in MiB. A request may carry up to 1 MiB more (form
+# overhead), so set nginx's client_max_body_size to at least this + 1M.
 upload_limit_mb = 20
+
+# Scheme and host of the public links handed out after an upload
+# (URL = public_url + "/" + Path). Defaults to http://<listen>.
+# public_url = "https://img.aka.cy"

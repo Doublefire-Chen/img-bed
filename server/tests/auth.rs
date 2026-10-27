@@ -172,6 +172,7 @@ async fn protected_endpoints_return_401_without_a_session() {
         (Method::GET, "/api/v1/session"),
         (Method::DELETE, "/api/v1/session"),
         (Method::GET, "/api/v1/images"),
+        (Method::POST, "/api/v1/images"),
         (Method::POST, "/api/v1/anything/else"),
         (Method::GET, "/api/v2/info"),
     ] {

@@ -18,21 +18,30 @@ pub enum ApiError {
     TooManyAttempts { retry_after_secs: u64 },
     #[error("not found")]
     NotFound,
+    #[error("method not allowed")]
+    MethodNotAllowed,
     #[error("{0}")]
     BadRequest(String),
+    #[error("unsupported file type; accepted types are JPEG, PNG, GIF, WebP, AVIF and SVG")]
+    UnsupportedType,
+    #[error("file is larger than the upload limit of {limit_mb} MB")]
+    TooLarge { limit_mb: u64 },
     #[error("internal error")]
     Internal(#[from] anyhow::Error),
 }
 
 impl ApiError {
-    fn status_and_code(&self) -> (StatusCode, &'static str) {
+    pub fn status_and_code(&self) -> (StatusCode, &'static str) {
         match self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::WrongPassword => (StatusCode::UNAUTHORIZED, "wrong_password"),
             Self::NoPassword => (StatusCode::UNAUTHORIZED, "no_password"),
             Self::TooManyAttempts { .. } => (StatusCode::TOO_MANY_REQUESTS, "too_many_attempts"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
+            Self::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed"),
             Self::BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
+            Self::UnsupportedType => (StatusCode::UNSUPPORTED_MEDIA_TYPE, "unsupported_type"),
+            Self::TooLarge { .. } => (StatusCode::PAYLOAD_TOO_LARGE, "too_large"),
             Self::Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }
     }
