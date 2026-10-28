@@ -56,7 +56,16 @@ export interface Info {
 export interface SessionInfo {
   /** Unix seconds; fixed at login, never extended. */
   expires_at: number;
+  /** The Owner's username as stored (login matches it in any case). */
+  username: string | null;
 }
+
+export interface UsernameChanged {
+  username: string;
+}
+
+/** Maximum username length in characters, as enforced by the server. */
+export const MAX_USERNAME_LEN = 64;
 
 export interface PasswordChanged {
   /** How many other sessions were signed out. */
@@ -237,9 +246,15 @@ export const UPLOAD_FIELD = "file";
 export const api = {
   info: () => request<Info>("GET", "/info"),
   session: () => request<SessionInfo>("GET", "/session"),
-  login: (password: string, rememberMe: boolean) =>
-    request<SessionInfo>("POST", "/session", { password, remember_me: rememberMe }),
+  login: (username: string, password: string, rememberMe: boolean) =>
+    request<SessionInfo>("POST", "/session", { username, password, remember_me: rememberMe }),
   logout: () => request<void>("DELETE", "/session"),
+  /** Changes the Owner's username; no session ends. */
+  changeUsername: (currentPassword: string, username: string) =>
+    request<UsernameChanged>("PUT", "/session/username", {
+      current_password: currentPassword,
+      username,
+    }),
   /** Changes the Owner's password; every other session ends, this one continues. */
   changePassword: (currentPassword: string, newPassword: string) =>
     request<PasswordChanged>("PUT", "/session/password", {

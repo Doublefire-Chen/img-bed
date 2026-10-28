@@ -13,8 +13,10 @@ pub enum ApiError {
     /// An `Authorization: Bearer` API Token that is unknown or revoked.
     #[error("the API Token is invalid or has been revoked")]
     InvalidToken,
-    #[error("wrong password")]
-    WrongPassword,
+    /// A login with the wrong username or the wrong password; the two are
+    /// deliberately indistinguishable.
+    #[error("wrong username or password")]
+    WrongCredentials,
     /// The current password given when changing it is wrong. Not 401: the
     /// session is still valid.
     #[error("the current password is wrong")]
@@ -25,8 +27,14 @@ pub enum ApiError {
         crate::auth::MIN_PASSWORD_LEN
     )]
     PasswordTooShort,
-    #[error("no password has been set; run `img-bed set-password` on the server")]
+    #[error("no password has been set; run `img-bed set-password --username <name>` on the server")]
     NoPassword,
+    /// A password is set but no username (a database from before usernames).
+    #[error("no username has been set; run `img-bed set-password --username <name>` on the server")]
+    NoUsername,
+    /// A username that breaks the rules (see [`crate::auth::clean_username`]).
+    #[error("{0}")]
+    InvalidUsername(&'static str),
     #[error("too many failed password attempts; try again in {retry_after_secs} seconds")]
     TooManyAttempts { retry_after_secs: u64 },
     #[error("not found")]
@@ -76,10 +84,12 @@ impl ApiError {
         match self {
             Self::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             Self::InvalidToken => (StatusCode::UNAUTHORIZED, "invalid_token"),
-            Self::WrongPassword => (StatusCode::UNAUTHORIZED, "wrong_password"),
+            Self::WrongCredentials => (StatusCode::UNAUTHORIZED, "wrong_credentials"),
             Self::WrongCurrentPassword => (StatusCode::FORBIDDEN, "wrong_current_password"),
             Self::PasswordTooShort => (StatusCode::BAD_REQUEST, "password_too_short"),
             Self::NoPassword => (StatusCode::UNAUTHORIZED, "no_password"),
+            Self::NoUsername => (StatusCode::UNAUTHORIZED, "no_username"),
+            Self::InvalidUsername(_) => (StatusCode::BAD_REQUEST, "invalid_username"),
             Self::TooManyAttempts { .. } => (StatusCode::TOO_MANY_REQUESTS, "too_many_attempts"),
             Self::NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Self::MethodNotAllowed => (StatusCode::METHOD_NOT_ALLOWED, "method_not_allowed"),

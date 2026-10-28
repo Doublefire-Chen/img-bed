@@ -37,7 +37,7 @@ async fn wrong_password_is_rejected_without_a_cookie() {
     let app = TestApp::with_password(PASSWORD).await;
     let res = app.login("wrong password", false).await;
     assert_eq!(res.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(res.error_code(), "wrong_password");
+    assert_eq!(res.error_code(), "wrong_credentials");
     assert!(res.session_set_cookie().is_none());
 }
 
@@ -172,6 +172,7 @@ async fn protected_endpoints_return_401_without_a_session() {
         (Method::GET, "/api/v1/session"),
         (Method::DELETE, "/api/v1/session"),
         (Method::PUT, "/api/v1/session/password"),
+        (Method::PUT, "/api/v1/session/username"),
         (Method::GET, "/api/v1/images"),
         (Method::POST, "/api/v1/images"),
         (Method::POST, "/api/v1/anything/else"),

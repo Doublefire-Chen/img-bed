@@ -83,9 +83,10 @@ install -d -o img-bed -g img-bed -m 0750 /var/lib/img-bed
 install -d -m 0755 /etc/img-bed
 install -o root -g img-bed -m 0640 img-bed-$V-$ARCH-linux-musl/img-bed.toml /etc/img-bed/img-bed.toml
 
-# 5. The Owner's password. Always run commands as img-bed, never as root,
-#    or the database files end up owned by root and the service can't write.
-sudo -u img-bed img-bed set-password --config /etc/img-bed/img-bed.toml
+# 5. The Owner's username and password (prompts for the password twice).
+#    Always run commands as img-bed, never as root, or the database files
+#    end up owned by root and the service can't write.
+sudo -u img-bed img-bed set-password --username <name> --config /etc/img-bed/img-bed.toml
 
 # 6. The service.
 install -m 0644 img-bed-$V-$ARCH-linux-musl/img-bed.service /etc/systemd/system/img-bed.service
@@ -151,6 +152,15 @@ Compare the new release's `img-bed.service`, `img-bed.toml` and
 `nginx-img-bed.conf` with the installed ones and carry over changes, then
 `systemctl daemon-reload` / `nginx -t && systemctl reload nginx`. Keep the
 previous release directory for rollback; delete older ones whenever.
+
+Upgrading from a release without login usernames: the login page answers
+"no username has been set" until you give the Owner one. Run this once after
+the restart (it asks for the password too and ends every session; the old
+password may be entered again):
+
+```sh
+sudo -u img-bed img-bed set-password --username <name> --config /etc/img-bed/img-bed.toml
+```
 
 ## Rollback
 

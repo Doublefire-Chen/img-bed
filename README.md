@@ -34,7 +34,7 @@ the admin area shows a warning banner when they differ.
 ```sh
 cd server
 cp img-bed.example.toml img-bed.toml      # paths are relative to this file
-cargo run -- set-password                 # prompts twice; or: echo 'pw' | cargo run -- set-password
+cargo run -- set-password --username me   # prompts twice; or: echo 'pw' | cargo run -- set-password --username me
 cargo run -- serve                        # http://127.0.0.1:8080/admin/
 ```
 
@@ -210,16 +210,37 @@ API (Owner session; a token can't manage tokens):
 Tokens are not affected by changing the password (`set-password` or the
 Settings page), which ends sessions only.
 
-## Password
+## Username and password
 
-`img-bed set-password` sets or changes the Owner's password (minimum 8
-characters) in the data directory's database and ends every existing session.
-There is no first-run web page: until it has been run, nobody can log in. It
-reads the password from a terminal prompt, or from the first line of standard
-input when that is not a terminal.
+The Owner logs in with a username and a password.
+`img-bed set-password [--username <name>]` sets or changes them in the data
+directory's database and ends every existing session. There is no first-run
+web page: until it has been run, nobody can log in.
 
-Once logged in, the Owner can also change it on the Settings page (current
-password, then the new one twice). That signs out every other session; the
+- The username is required the first time. Later runs keep the stored one
+  unless `--username` gives a new one. On a terminal without `--username`,
+  it prompts `Username [current]:` (Enter keeps it).
+- The password (minimum 8 characters) comes from a terminal prompt (asked
+  twice), or from the first line of standard input when that is not a
+  terminal: `echo 'pw' | img-bed set-password --username me`.
+- Usernames are stored as entered (trimmed): 1–64 characters, no spaces or
+  control characters. Login matches them ignoring case (Unicode lower case).
+- Login is `POST /api/v1/session` with
+  `{"username": "...", "password": "...", "remember_me": false}`. A wrong
+  username and a wrong password both answer `wrong_credentials` (401), and
+  both count toward the failed-login limit (5 per 15 minutes). A database
+  from before usernames answers `no_username` (401) until
+  `set-password --username` has been run.
+
+Once logged in, the Owner can change the username on the Settings page with
+the current password: `PUT /api/v1/session/username` with
+`{"current_password": "...", "username": "..."}` answers `{"username": ...}`.
+No session ends. Errors: `invalid_username` (400), `wrong_current_password`
+(403), `too_many_attempts` (429); a wrong current password counts toward the
+failed-login limit. `GET /api/v1/session` includes the `username`.
+
+The password can also be changed on the Settings page (current password,
+then the new one twice). That signs out every other session; the
 current one stays logged in until its original expiry. API:
 `PUT /api/v1/session/password` with
 `{"current_password": "...", "new_password": "..."}` (Owner session only;

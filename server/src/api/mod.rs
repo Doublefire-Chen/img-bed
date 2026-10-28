@@ -28,6 +28,7 @@ pub fn router() -> Router<AppState> {
                 .delete(session::logout),
         )
         .route("/session/password", put(session::change_password))
+        .route("/session/username", put(session::change_username))
         .route("/images", get(images::list).post(images::upload))
         .route("/images/{id}", get(images::detail).delete(trash::trash_one))
         .route("/images/{id}/file", get(images::file))

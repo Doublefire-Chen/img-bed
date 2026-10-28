@@ -1,10 +1,18 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useEffect, useState } from "react";
-import { ApiError, api, MIN_PASSWORD_LEN, type Settings, SETTINGS_KEY } from "../api";
+import {
+  ApiError,
+  api,
+  MAX_USERNAME_LEN,
+  MIN_PASSWORD_LEN,
+  type Settings,
+  SETTINGS_KEY,
+} from "../api";
+import { SESSION_KEY, useSession } from "../session";
 
 const CUSTOM = "custom";
 
-/** The Owner's settings: the Path Template and the password. */
+/** The Owner's settings: the Path Template, the username and the password. */
 export function SettingsPage() {
   const query = useQuery({ queryKey: SETTINGS_KEY, queryFn: api.settings });
 
@@ -20,6 +28,7 @@ export function SettingsPage() {
       ) : (
         <p className="muted">Loading…</p>
       )}
+      <ChangeUsernameForm />
       <ChangePasswordForm />
     </section>
   );
@@ -228,8 +237,133 @@ function describePasswordError(error: unknown): string {
   return "Could not reach the server.";
 }
 
+/** Mirrors the server's username rules; returns a message, or null if fine. */
+function usernameProblem(name: string): string | null {
+  const trimmed = name.trim();
+  if (trimmed === "") return "The username must not be empty.";
+  if ([...trimmed].length > MAX_USERNAME_LEN)
+    return `The username must be at most ${MAX_USERNAME_LEN} characters.`;
+  if (/[\s\p{Cc}]/u.test(trimmed)) return "The username must not contain spaces.";
+  return null;
+}
+
+function describeUsernameError(error: unknown): string {
+  if (error instanceof ApiError && error.code === "invalid_username") {
+    return `${error.message.charAt(0).toUpperCase()}${error.message.slice(1)}.`;
+  }
+  return describePasswordError(error);
+}
+
+/** Changes the Owner's username (login matches it in any case); no session ends. */
+function ChangeUsernameForm() {
+  const session = useSession();
+  const queryClient = useQueryClient();
+  const currentName = session.data?.username ?? "";
+  const [name, setName] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  const value = name ?? currentName;
+
+  const change = useMutation({
+    mutationFn: () => api.changeUsername(password, value),
+    onSuccess: (data) => {
+      setPassword("");
+      setName(null);
+      setDone(true);
+      queryClient.setQueryData(SESSION_KEY, (old: typeof session.data) =>
+        old ? { ...old, username: data.username } : old,
+      );
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.code === "wrong_current_password") setPassword("");
+    },
+  });
+
+  const edited = () => {
+    setLocalError(null);
+    setDone(false);
+    change.reset();
+  };
+
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    const problem = usernameProblem(value);
+    if (problem) {
+      setLocalError(problem);
+      return;
+    }
+    change.mutate();
+  };
+
+  const error = localError ?? (change.isError ? describeUsernameError(change.error) : null);
+
+  return (
+    <form className="password-form" method="post" onSubmit={onSubmit}>
+      <h2>Change username</h2>
+      <p className="muted small">
+        The username you log in with. Upper and lower case don't matter when logging in. Nobody is
+        signed out.
+      </p>
+      <label className="field">
+        <span>Username</span>
+        <input
+          type="text"
+          name="username"
+          autoComplete="username"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          required
+          maxLength={MAX_USERNAME_LEN}
+          value={value}
+          onChange={(e) => {
+            setName(e.target.value);
+            edited();
+          }}
+        />
+      </label>
+      <label className="field">
+        <span>Current password</span>
+        <input
+          type="password"
+          name="password"
+          autoComplete="current-password"
+          required
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            edited();
+          }}
+        />
+      </label>
+      {error && (
+        <p className="error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="settings-actions">
+        <button
+          type="submit"
+          className="button-primary"
+          disabled={change.isPending || value.trim() === currentName}
+        >
+          {change.isPending ? "Changing…" : "Change username"}
+        </button>
+        {done && (
+          <span className="muted small" role="status">
+            Username changed to “{currentName}”.
+          </span>
+        )}
+      </div>
+    </form>
+  );
+}
+
 /** Changes the Owner's password; other sessions are signed out, this one stays. */
 function ChangePasswordForm() {
+  const username = useSession().data?.username ?? "";
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -272,8 +406,17 @@ function ChangePasswordForm() {
   const error = localError ?? (change.isError ? describePasswordError(change.error) : null);
 
   return (
-    <form className="password-form" onSubmit={onSubmit}>
+    <form className="password-form" method="post" onSubmit={onSubmit}>
       <h2>Change password</h2>
+      {/* Tells password managers which account the new password belongs to. */}
+      <input
+        type="text"
+        name="username"
+        autoComplete="username"
+        value={username}
+        readOnly
+        hidden
+      />
       <p className="muted small">
         Changing the password signs out every other browser. This one stays logged in. API Tokens
         keep working; revoke them on the API Tokens page if needed.

@@ -1,11 +1,14 @@
 //! Owner authentication: the password, login sessions, and the failed-login
 //! rate limit.
 //!
-//! - The password hash (argon2id) lives in the database and is set only by
-//!   `img-bed set-password` (see [`set_password`]), which ends every
+//! - The Owner logs in with a username (matched ignoring case) and a
+//!   password. A wrong username and a wrong password look the same.
+//! - The username and the password hash (argon2id) live in the database and
+//!   are set by `img-bed set-password` (see [`set_password`]), which ends every
 //!   session, or changed by the Owner in the admin area (see
 //!   [`change_password`]), which ends every session but the Owner's current
-//!   one. Neither revokes API Tokens.
+//!   one, or the username changed there (see [`change_username`]), which ends
+//!   no session. None of them revokes API Tokens.
 //! - A session is a random token in an `HttpOnly; Secure; SameSite=Strict`
 //!   cookie; only its SHA-256 is stored. It expires a fixed time after login
 //!   ([`SESSION_TTL`], or [`REMEMBER_ME_TTL`]) and never slides.
@@ -40,6 +43,7 @@ pub const SESSION_COOKIE: &str = "img_bed_session";
 pub const SESSION_TTL: Duration = Duration::hours(24);
 pub const REMEMBER_ME_TTL: Duration = Duration::days(7);
 pub const MIN_PASSWORD_LEN: usize = 8;
+pub const MAX_USERNAME_LEN: usize = 64;
 
 /// Failed logins allowed within [`LOGIN_WINDOW`] before further attempts are
 /// refused with 429.
@@ -47,20 +51,32 @@ pub const MAX_FAILED_LOGINS: usize = 5;
 pub const LOGIN_WINDOW: Duration = Duration::minutes(15);
 
 // ---------------------------------------------------------------------------
-// Password
+// Username and password
 
 /// Sets (or replaces) the Owner's password and ends every existing session.
 /// Used by `img-bed set-password`.
+///
+/// `username` replaces the stored username when given; otherwise the stored
+/// one is kept, and it is an error if there is none yet (the first run must
+/// give a username).
 pub async fn set_password(
     db: &SqlitePool,
     password: &str,
+    username: Option<&str>,
     now: OffsetDateTime,
 ) -> anyhow::Result<()> {
+    let username = username.map(clean_username).transpose()?;
     anyhow::ensure!(
         password_long_enough(password),
         "the password must be at least {MIN_PASSWORD_LEN} characters"
     );
-    store_password(db, password, now, None).await?;
+    if username.is_none() {
+        anyhow::ensure!(
+            current_username(db).await?.is_some(),
+            "no username is set yet; run again with --username <name>"
+        );
+    }
+    store_password(db, password, username.as_deref(), now, None).await?;
     Ok(())
 }
 
@@ -76,7 +92,7 @@ pub async fn change_password(
     now: OffsetDateTime,
     keep_session_id: i64,
 ) -> anyhow::Result<u64> {
-    store_password(db, new_password, now, Some(keep_session_id)).await
+    store_password(db, new_password, None, now, Some(keep_session_id)).await
 }
 
 /// Whether `password` meets the minimum length (in characters).
@@ -84,11 +100,66 @@ pub fn password_long_enough(password: &str) -> bool {
     password.chars().count() >= MIN_PASSWORD_LEN
 }
 
-/// Hashes and stores the password, then deletes every session but
-/// `keep_session_id`, in one transaction. Returns the sessions deleted.
+/// Trims a username and checks it: 1 to [`MAX_USERNAME_LEN`] characters, no
+/// whitespace or control characters. Returns it as it will be stored.
+pub fn clean_username(raw: &str) -> Result<String, ApiError> {
+    let name = raw.trim();
+    if name.is_empty() {
+        return Err(ApiError::InvalidUsername("the username must not be empty"));
+    }
+    if name.chars().count() > MAX_USERNAME_LEN {
+        return Err(ApiError::InvalidUsername(
+            "the username must be at most 64 characters",
+        ));
+    }
+    if name.chars().any(|c| c.is_whitespace() || c.is_control()) {
+        return Err(ApiError::InvalidUsername(
+            "the username must not contain spaces or control characters",
+        ));
+    }
+    Ok(name.to_owned())
+}
+
+/// Whether `given` is the Owner's username, ignoring case (Unicode lower
+/// case on both sides, after trimming `given`).
+fn username_matches(stored: &str, given: &str) -> bool {
+    stored.to_lowercase() == given.trim().to_lowercase()
+}
+
+/// The stored username, if a password and a username have been set.
+pub async fn current_username(db: &SqlitePool) -> anyhow::Result<Option<String>> {
+    let row = sqlx::query!("SELECT username FROM owner WHERE id = 1")
+        .fetch_optional(db)
+        .await?;
+    Ok(row.and_then(|r| r.username))
+}
+
+/// Replaces the Owner's username from the admin area. Sessions are not
+/// affected. The caller has already checked the current password and cleaned
+/// the name with [`clean_username`].
+pub async fn change_username(
+    db: &SqlitePool,
+    username: &str,
+    now: OffsetDateTime,
+) -> anyhow::Result<()> {
+    let now = now.unix_timestamp();
+    sqlx::query!(
+        "UPDATE owner SET username = ?, updated_at = ? WHERE id = 1",
+        username,
+        now
+    )
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// Hashes and stores the password (and the username, when given), then
+/// deletes every session but `keep_session_id`, in one transaction. Returns
+/// the sessions deleted.
 async fn store_password(
     db: &SqlitePool,
     password: &str,
+    username: Option<&str>,
     now: OffsetDateTime,
     keep_session_id: Option<i64>,
 ) -> anyhow::Result<u64> {
@@ -98,10 +169,12 @@ async fn store_password(
 
     let mut tx = db.begin().await?;
     sqlx::query!(
-        "INSERT INTO owner (id, password_hash, updated_at) VALUES (1, ?, ?)
+        "INSERT INTO owner (id, password_hash, username, updated_at) VALUES (1, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET password_hash = excluded.password_hash,
+                                        username = COALESCE(excluded.username, owner.username),
                                         updated_at = excluded.updated_at",
         hash,
+        username,
         now
     )
     .execute(&mut *tx)
@@ -123,17 +196,11 @@ fn hash_password(password: &str) -> anyhow::Result<String> {
     Ok(hash.to_string())
 }
 
-/// Checks `password` against the stored hash.
-pub async fn verify_password(db: &SqlitePool, password: &str) -> Result<(), ApiError> {
-    let row = sqlx::query!("SELECT password_hash FROM owner WHERE id = 1")
-        .fetch_optional(db)
-        .await?;
-    let Some(row) = row else {
-        return Err(ApiError::NoPassword);
-    };
+/// Runs argon2 on `password` against `hash` off the async runtime.
+async fn password_matches(hash: String, password: &str) -> Result<bool, ApiError> {
     let password = password.to_owned();
     let ok = tokio::task::spawn_blocking(move || -> anyhow::Result<bool> {
-        let parsed = PasswordHash::new(&row.password_hash)
+        let parsed = PasswordHash::new(&hash)
             .map_err(|e| anyhow::anyhow!("stored password hash is invalid: {e}"))?;
         Ok(Argon2::default()
             .verify_password(password.as_bytes(), &parsed)
@@ -141,10 +208,44 @@ pub async fn verify_password(db: &SqlitePool, password: &str) -> Result<(), ApiE
     })
     .await
     .context("password verification task")??;
-    if ok {
+    Ok(ok)
+}
+
+/// Checks a login. A wrong username and a wrong password both give
+/// [`ApiError::WrongCredentials`], and the password is verified against the
+/// stored hash either way, so the two take the same time too.
+pub async fn verify_login(db: &SqlitePool, username: &str, password: &str) -> Result<(), ApiError> {
+    let row = sqlx::query!("SELECT password_hash, username FROM owner WHERE id = 1")
+        .fetch_optional(db)
+        .await?;
+    let Some(row) = row else {
+        return Err(ApiError::NoPassword);
+    };
+    let Some(stored) = row.username else {
+        return Err(ApiError::NoUsername);
+    };
+    let name_ok = username_matches(&stored, username);
+    let password_ok = password_matches(row.password_hash, password).await?;
+    if name_ok && password_ok {
         Ok(())
     } else {
-        Err(ApiError::WrongPassword)
+        Err(ApiError::WrongCredentials)
+    }
+}
+
+/// Checks the Owner's current password when changing the password or the
+/// username from the admin area (the session already identifies the Owner).
+pub async fn verify_current_password(db: &SqlitePool, password: &str) -> Result<(), ApiError> {
+    let row = sqlx::query!("SELECT password_hash FROM owner WHERE id = 1")
+        .fetch_optional(db)
+        .await?;
+    let Some(row) = row else {
+        return Err(ApiError::NoPassword);
+    };
+    if password_matches(row.password_hash, password).await? {
+        Ok(())
+    } else {
+        Err(ApiError::WrongCurrentPassword)
     }
 }
 

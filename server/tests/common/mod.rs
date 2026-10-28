@@ -7,7 +7,7 @@
 //! mod common;
 //! use common::TestApp;
 //!
-//! let app = TestApp::with_password("correct horse").await;
+//! let app = TestApp::with_password("correct horse").await; // username "owner"
 //! let session = app.login_ok("correct horse", false).await;
 //! let res = app.get_as("/api/v1/session", &session).await;
 //! assert_eq!(res.status, StatusCode::OK);
@@ -18,6 +18,10 @@
 //! [`TestApp::builder`]. The app's random source is a [`ScriptedRandom`]
 //! (`app.random`): push bytes into it to force the next `{random:N}` draws,
 //! e.g. to make a Path collide or hit a Reserved Prefix.
+//!
+//! The Owner's username is [`USERNAME`] unless the builder sets another;
+//! `app.login(..)` / `app.login_ok(..)` send it, and `app.login_as(..)` sends
+//! any username.
 //!
 //! API Tokens: `app.create_token_ok(&session, name)` returns the secret;
 //! `app.upload_with_token(..)` and `app.request_with_token(..)` send it as
@@ -59,6 +63,10 @@ pub const START: i64 = 1_767_225_600;
 pub const INDEX_HTML: &str = "<!doctype html><title>img-bed admin</title><div id=\"root\"></div>";
 pub const APP_JS: &str = "console.log('img-bed admin');";
 
+/// The Owner's username in every test app built with a password, unless
+/// [`TestAppBuilder::username`] sets another.
+pub const USERNAME: &str = "owner";
+
 /// The `public_url` every test app is configured with.
 pub const PUBLIC_URL: &str = "https://img.test";
 
@@ -78,6 +86,8 @@ pub struct TestApp {
 /// Options for a [`TestApp`]; see [`TestApp::builder`].
 pub struct TestAppBuilder {
     password: Option<String>,
+    username: String,
+    before_usernames: bool,
     path_template: Option<Template>,
     upload_limit_mb: u64,
 }
@@ -86,6 +96,21 @@ impl TestAppBuilder {
     /// Sets the Owner's password.
     pub fn password(mut self, password: &str) -> Self {
         self.password = Some(password.to_owned());
+        self
+    }
+
+    /// Sets the Owner's username (stored with the password; default
+    /// [`USERNAME`]).
+    pub fn username(mut self, username: &str) -> Self {
+        self.username = username.to_owned();
+        self
+    }
+
+    /// Starts from a database made before usernames existed (Migrations
+    /// 0001-0005 only) holding the builder's password and no username; the
+    /// app then migrates it like an upgraded server would.
+    pub fn before_usernames(mut self) -> Self {
+        self.before_usernames = true;
         self
     }
 
@@ -119,6 +144,11 @@ impl TestAppBuilder {
         .unwrap();
         let config = Config::load(&dir.path().join("img-bed.toml")).unwrap();
         let clock = ManualClock::new(OffsetDateTime::from_unix_timestamp(START).unwrap());
+        let mut password = self.password;
+        if self.before_usernames {
+            let password = password.take().expect("before_usernames needs a password");
+            write_v5_owner(&config.data_dir, &password).await;
+        }
         if let Some(template) = &self.path_template {
             let db = img_bed::db::open(&config.data_dir).await.unwrap();
             img_bed::settings::save_path_template(
@@ -131,8 +161,8 @@ impl TestAppBuilder {
             db.close().await;
         }
         let app = TestApp::build(dir, config, clock, ScriptedRandom::new(0)).await;
-        if let Some(password) = self.password {
-            app.set_password(&password).await;
+        if let Some(password) = password {
+            app.set_owner(&self.username, &password).await;
         }
         app
     }
@@ -142,6 +172,8 @@ impl TestApp {
     pub fn builder() -> TestAppBuilder {
         TestAppBuilder {
             password: None,
+            username: USERNAME.to_owned(),
+            before_usernames: false,
             path_template: None,
             upload_limit_mb: img_bed::config::DEFAULT_UPLOAD_LIMIT_MB,
         }
@@ -211,10 +243,26 @@ impl TestApp {
         &self.config.data_dir
     }
 
-    /// Sets the password directly (the CLI path is covered in `tests/cli.rs`).
+    /// Sets the password directly, keeping the stored username (or setting
+    /// [`USERNAME`] if there is none), like `set-password` without
+    /// `--username`. The CLI path is covered in `tests/cli.rs`.
     pub async fn set_password(&self, password: &str) {
         let db = img_bed::db::open(&self.config.data_dir).await.unwrap();
-        img_bed::auth::set_password(&db, password, self.clock_now())
+        let username = match img_bed::auth::current_username(&db).await.unwrap() {
+            Some(_) => None,
+            None => Some(USERNAME),
+        };
+        img_bed::auth::set_password(&db, password, username, self.clock_now())
+            .await
+            .unwrap();
+        db.close().await;
+    }
+
+    /// Sets the username and the password directly, like
+    /// `set-password --username`.
+    pub async fn set_owner(&self, username: &str, password: &str) {
+        let db = img_bed::db::open(&self.config.data_dir).await.unwrap();
+        img_bed::auth::set_password(&db, password, Some(username), self.clock_now())
             .await
             .unwrap();
         db.close().await;
@@ -393,17 +441,37 @@ impl TestApp {
 
     // -- Auth -------------------------------------------------------------
 
+    /// Logs in as [`USERNAME`].
     pub async fn login(&self, password: &str, remember_me: bool) -> TestResponse {
+        self.login_as(USERNAME, password, remember_me).await
+    }
+
+    /// Logs in with any username.
+    pub async fn login_as(
+        &self,
+        username: &str,
+        password: &str,
+        remember_me: bool,
+    ) -> TestResponse {
         self.post_json(
             "/api/v1/session",
-            serde_json::json!({ "password": password, "remember_me": remember_me }),
+            serde_json::json!({
+                "username": username,
+                "password": password,
+                "remember_me": remember_me,
+            }),
         )
         .await
     }
 
-    /// Logs in and returns the session, asserting success.
+    /// Logs in as [`USERNAME`] and returns the session, asserting success.
     pub async fn login_ok(&self, password: &str, remember_me: bool) -> Session {
-        let res = self.login(password, remember_me).await;
+        self.login_ok_as(USERNAME, password, remember_me).await
+    }
+
+    /// Logs in with any username and returns the session, asserting success.
+    pub async fn login_ok_as(&self, username: &str, password: &str, remember_me: bool) -> Session {
+        let res = self.login_as(username, password, remember_me).await;
         assert_eq!(res.status, StatusCode::OK, "login failed: {}", res.text());
         res.session().expect("login response sets a session cookie")
     }
@@ -427,6 +495,25 @@ impl TestApp {
         .await
     }
 
+    /// `PUT /api/v1/session/username` as `session`.
+    pub async fn change_username(
+        &self,
+        session: &Session,
+        current_password: &str,
+        username: &str,
+    ) -> TestResponse {
+        self.request(
+            Method::PUT,
+            "/api/v1/session/username",
+            Some(session),
+            Some(serde_json::json!({
+                "current_password": current_password,
+                "username": username,
+            })),
+        )
+        .await
+    }
+
     /// Whether `session` is currently accepted by the server.
     pub async fn is_valid(&self, session: &Session) -> bool {
         let res = self.get_as("/api/v1/session", session).await;
@@ -443,6 +530,40 @@ impl TestApp {
     pub fn cli(&self, args: &[&str], stdin: &str) -> Output {
         run_cli(&self.config_path(), args, stdin)
     }
+}
+
+/// Creates the database at Migration 0005 (before usernames) with an Owner
+/// password, as an instance from before this change would have it.
+async fn write_v5_owner(data_dir: &Path, password: &str) {
+    use argon2::password_hash::rand_core::OsRng;
+    use argon2::password_hash::{PasswordHasher, SaltString};
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePool};
+
+    std::fs::create_dir_all(data_dir).unwrap();
+    let options = SqliteConnectOptions::new()
+        .filename(data_dir.join(img_bed::db::DB_FILE))
+        .create_if_missing(true);
+    let pool = SqlitePool::connect_with(options).await.unwrap();
+    let mut migrator = sqlx::migrate!("./migrations");
+    migrator.migrations = migrator
+        .migrations
+        .iter()
+        .filter(|m| m.version <= 5)
+        .cloned()
+        .collect::<Vec<_>>()
+        .into();
+    migrator.run(&pool).await.unwrap();
+    let hash = argon2::Argon2::default()
+        .hash_password(password.as_bytes(), &SaltString::generate(&mut OsRng))
+        .unwrap()
+        .to_string();
+    sqlx::query("INSERT INTO owner (id, password_hash, updated_at) VALUES (1, ?, ?)")
+        .bind(hash)
+        .bind(START)
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
 }
 
 /// Builds a `multipart/form-data` body with one `file` part per entry.

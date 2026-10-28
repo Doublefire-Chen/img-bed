@@ -23,7 +23,7 @@ async fn the_new_password_works_for_login_and_the_old_one_does_not() {
 
     let res = app.login(OLD, false).await;
     assert_eq!(res.status, StatusCode::UNAUTHORIZED);
-    assert_eq!(res.error_code(), "wrong_password");
+    assert_eq!(res.error_code(), "wrong_credentials");
     app.login_ok(NEW, false).await;
 
     // It is stored, not just held in memory.

@@ -1,4 +1,4 @@
-//! Command line: `img-bed [--config FILE] serve | set-password`.
+//! Command line: `img-bed [--config FILE] serve | set-password [--username NAME]`.
 
 use std::io::{BufRead, IsTerminal};
 use std::path::PathBuf;
@@ -38,18 +38,26 @@ pub struct Cli {
 pub enum Command {
     /// Run the HTTP server.
     Serve,
-    /// Set or change the Owner's password. Ends every existing session.
+    /// Set or change the Owner's username and password. Ends every existing
+    /// session.
     ///
-    /// Prompts for the password on a terminal; otherwise reads the first
-    /// line of standard input.
-    SetPassword,
+    /// On a terminal, prompts for the username (Enter keeps the current one)
+    /// unless --username is given, then for the password twice. Otherwise
+    /// reads the password from the first line of standard input, and
+    /// --username is required the first time.
+    SetPassword {
+        /// The Owner's username for logging in. Without it, the current
+        /// username is kept.
+        #[arg(long, value_name = "NAME")]
+        username: Option<String>,
+    },
 }
 
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
     let config = Config::load(&cli.config)?;
     match cli.command {
         Command::Serve => serve(config).await,
-        Command::SetPassword => set_password(config).await,
+        Command::SetPassword { username } => set_password(config, username).await,
     }
 }
 
@@ -99,13 +107,63 @@ async fn shutdown_signal() {
     }
 }
 
-async fn set_password(config: Config) -> anyhow::Result<()> {
-    let password = tokio::task::spawn_blocking(read_new_password).await??;
+async fn set_password(config: Config, username: Option<String>) -> anyhow::Result<()> {
     let db = db::open(&config.data_dir).await?;
-    auth::set_password(&db, &password, SystemClock.now()).await?;
+    let result = set_password_in(&db, username).await;
     db.close().await;
-    println!("Password set. All existing sessions have been ended.");
+    let username = result?;
+    println!("Password set for {username:?}. All existing sessions have been ended.");
     Ok(())
+}
+
+/// Asks for whatever is missing, stores it, and returns the username in use.
+async fn set_password_in(
+    db: &sqlx::SqlitePool,
+    username: Option<String>,
+) -> anyhow::Result<String> {
+    let current = auth::current_username(db).await?;
+    let username = match username {
+        Some(name) => Some(auth::clean_username(&name)?),
+        None if std::io::stdin().is_terminal() => {
+            let current = current.clone();
+            tokio::task::spawn_blocking(move || prompt_username(current.as_deref())).await??
+        }
+        None => {
+            anyhow::ensure!(
+                current.is_some(),
+                "no username is set yet; run again with --username <name>"
+            );
+            None
+        }
+    };
+    let password = tokio::task::spawn_blocking(read_new_password).await??;
+    auth::set_password(db, &password, username.as_deref(), SystemClock.now()).await?;
+    Ok(username.or(current).expect("checked above"))
+}
+
+/// Prompts for the username on the terminal. Returns `None` (keep the
+/// current one) when Enter is pressed and there is a current one.
+fn prompt_username(current: Option<&str>) -> anyhow::Result<Option<String>> {
+    use std::io::Write;
+    loop {
+        match current {
+            Some(name) => eprint!("Username [{name}]: "),
+            None => eprint!("Username: "),
+        }
+        std::io::stderr().flush()?;
+        let mut line = String::new();
+        anyhow::ensure!(
+            std::io::stdin().lock().read_line(&mut line)? > 0,
+            "no username given"
+        );
+        if line.trim().is_empty() && current.is_some() {
+            return Ok(None);
+        }
+        match auth::clean_username(&line) {
+            Ok(name) => return Ok(Some(name)),
+            Err(e) => eprintln!("{e}"),
+        }
+    }
 }
 
 fn read_new_password() -> anyhow::Result<String> {

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO owner (id, password_hash, username, updated_at) VALUES (1, ?, ?, ?)\n         ON CONFLICT (id) DO UPDATE SET password_hash = excluded.password_hash,\n                                        username = COALESCE(excluded.username, owner.username),\n                                        updated_at = excluded.updated_at",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "de92d6b68b042887a506fa83788948b667bac5c76d96e9077d624b8ad421debb"
+}

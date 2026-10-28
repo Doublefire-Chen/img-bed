@@ -306,6 +306,11 @@ async fn a_token_is_refused_on_every_other_endpoint() {
             "/api/v1/session/password".into(),
             Some(json!({ "current_password": "x", "new_password": "long enough" })),
         ),
+        (
+            Method::PUT,
+            "/api/v1/session/username".into(),
+            Some(json!({ "current_password": "x", "username": "mallory" })),
+        ),
         // Unknown paths and methods
         (Method::GET, "/api/v1/nope".into(), None),
         (Method::PATCH, "/api/v1/images".into(), None),

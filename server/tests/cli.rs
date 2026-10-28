@@ -8,57 +8,138 @@ use std::process::{Command, Stdio};
 use axum::http::StatusCode;
 use common::TestApp;
 
-#[tokio::test]
-async fn set_password_sets_the_password() {
-    let app = TestApp::new().await;
-    let out = app.cli(&["set-password"], "first password\n");
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+fn stderr(out: &std::process::Output) -> String {
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
 
-    app.login_ok("first password", false).await;
+#[tokio::test]
+async fn set_password_sets_the_username_and_the_password() {
+    let app = TestApp::new().await;
+    let out = app.cli(&["set-password", "--username", "alice"], "first password\n");
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("\"alice\""));
+
+    app.login_ok_as("alice", "first password", false).await;
     assert_eq!(
-        app.login("other password", false).await.status,
+        app.login_as("alice", "other password", false).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        app.login_as("bob", "first password", false).await.status,
         StatusCode::UNAUTHORIZED
     );
 }
 
 #[tokio::test]
-async fn set_password_again_changes_it_and_ends_every_session() {
+async fn the_first_set_password_needs_a_username() {
+    let app = TestApp::new().await;
+    let out = app.cli(&["set-password"], "first password\n");
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("--username"), "{}", stderr(&out));
+    // Nothing was stored.
+    assert_eq!(
+        app.login_as("alice", "first password", false)
+            .await
+            .error_code(),
+        "no_password"
+    );
+}
+
+#[tokio::test]
+async fn set_password_again_keeps_the_username_and_ends_every_session() {
     let app = TestApp::new().await;
     assert!(
-        app.cli(&["set-password"], "first password\n")
+        app.cli(&["set-password", "--username", "alice"], "first password\n")
             .status
             .success()
     );
-    let day = app.login_ok("first password", false).await;
-    let week = app.login_ok("first password", true).await;
+    let day = app.login_ok_as("alice", "first password", false).await;
+    let week = app.login_ok_as("alice", "first password", true).await;
 
     let out = app.cli(&["set-password"], "second password\n");
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("\"alice\""));
 
     assert!(!app.is_valid(&day).await);
     assert!(!app.is_valid(&week).await);
     assert_eq!(
-        app.login("first password", false).await.status,
+        app.login_as("alice", "first password", false).await.status,
         StatusCode::UNAUTHORIZED
     );
-    app.login_ok("second password", false).await;
+    app.login_ok_as("alice", "second password", false).await;
+}
+
+#[tokio::test]
+async fn set_password_with_a_new_username_replaces_it() {
+    let app = TestApp::new().await;
+    assert!(
+        app.cli(&["set-password", "--username", "alice"], "first password\n")
+            .status
+            .success()
+    );
+    let out = app.cli(&["set-password", "--username", " Bob "], "first password\n");
+    assert!(out.status.success(), "{}", stderr(&out));
+
+    app.login_ok_as("bob", "first password", false).await;
+    assert_eq!(
+        app.login_as("alice", "first password", false)
+            .await
+            .error_code(),
+        "wrong_credentials"
+    );
+    // Stored as entered (trimmed).
+    let session = app.login_ok_as("BOB", "first password", false).await;
+    assert_eq!(
+        app.get_as("/api/v1/session", &session).await.json()["username"],
+        "Bob"
+    );
+}
+
+#[tokio::test]
+async fn set_password_rejects_an_invalid_username() {
+    let app = TestApp::new().await;
+    let too_long = "a".repeat(65);
+    for name in ["", "   ", "two words", "tab\there", too_long.as_str()] {
+        let out = app.cli(&["set-password", "--username", name], "first password\n");
+        assert!(!out.status.success(), "{name:?} was accepted");
+        assert!(stderr(&out).contains("username"), "{}", stderr(&out));
+    }
+    let longest = "a".repeat(64);
+    let out = app.cli(
+        &["set-password", "--username", &longest],
+        "first password\n",
+    );
+    assert!(out.status.success(), "{}", stderr(&out));
+    app.login_ok_as(&longest, "first password", false).await;
 }
 
 #[tokio::test]
 async fn set_password_rejects_a_short_password() {
     let app = TestApp::new().await;
-    let out = app.cli(&["set-password"], "short\n");
+    let out = app.cli(&["set-password", "--username", "alice"], "short\n");
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("at least"));
-    assert_eq!(app.login("short", false).await.error_code(), "no_password");
+    assert!(stderr(&out).contains("at least"));
+    assert_eq!(
+        app.login_as("alice", "short", false).await.error_code(),
+        "no_password"
+    );
+}
+
+#[tokio::test]
+async fn set_password_gives_an_old_database_its_username() {
+    let app = TestApp::builder()
+        .password("old password")
+        .before_usernames()
+        .build()
+        .await;
+    // Without a username it is refused, as on a first run.
+    let out = app.cli(&["set-password"], "new password\n");
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("--username"), "{}", stderr(&out));
+
+    let out = app.cli(&["set-password", "--username", "alice"], "new password\n");
+    assert!(out.status.success(), "{}", stderr(&out));
+    app.login_ok_as("alice", "new password", false).await;
 }
 
 #[test]

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE owner SET username = ?, updated_at = ? WHERE id = 1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 2
+    },
+    "nullable": []
+  },
+  "hash": "e02d646aaa54494ebdddf0f6a3f1a0fbc0927c7e98ea5110d85fe856894ab403"
+}

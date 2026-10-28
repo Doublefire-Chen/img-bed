@@ -22,8 +22,15 @@ export function useSession() {
 export function useLogin() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ password, rememberMe }: { password: string; rememberMe: boolean }) =>
-      api.login(password, rememberMe),
+    mutationFn: ({
+      username,
+      password,
+      rememberMe,
+    }: {
+      username: string;
+      password: string;
+      rememberMe: boolean;
+    }) => api.login(username, password, rememberMe),
     onSuccess: (session) => queryClient.setQueryData(SESSION_KEY, session),
   });
 }

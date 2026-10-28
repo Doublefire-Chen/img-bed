@@ -6,10 +6,12 @@ import { useLogin, useSession } from "../session";
 function describe(error: unknown): string {
   if (error instanceof ApiError) {
     switch (error.code) {
-      case "wrong_password":
-        return "Wrong password.";
+      case "wrong_credentials":
+        return "Wrong username or password.";
       case "no_password":
-        return "No password has been set yet. Run `img-bed set-password` on the server.";
+        return "No password has been set yet. Run `img-bed set-password --username <name>` on the server.";
+      case "no_username":
+        return "No username has been set yet. Run `img-bed set-password --username <name>` on the server.";
       case "too_many_attempts":
         return `Too many failed attempts. ${error.message.replace(/^too many failed [^;]*; /, "")}`;
     }
@@ -23,6 +25,7 @@ export function LoginPage() {
   const login = useLogin();
   const navigate = useNavigate();
   const location = useLocation();
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(false);
 
@@ -35,7 +38,7 @@ export function LoginPage() {
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     login.mutate(
-      { password, rememberMe },
+      { username, password, rememberMe },
       {
         onSuccess: () => navigate(from, { replace: true }),
         onError: () => setPassword(""),
@@ -45,14 +48,29 @@ export function LoginPage() {
 
   return (
     <main className="login">
-      <form className="card login-card" onSubmit={onSubmit}>
+      <form className="card login-card" method="post" onSubmit={onSubmit}>
         <h1 className="brand">img-bed</h1>
+        <label className="field">
+          <span>Username</span>
+          <input
+            type="text"
+            name="username"
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            autoFocus
+            required
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+        </label>
         <label className="field">
           <span>Password</span>
           <input
             type="password"
+            name="password"
             autoComplete="current-password"
-            autoFocus
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
