@@ -1,6 +1,6 @@
 # Deploying img-bed
 
-img-bed runs as one static binary behind nginx, which terminates TLS. The
+img-bed runs as one static binary behind nginx or Apache, which terminates TLS. The
 whole state is the data directory; everything else can be reinstalled from a
 release.
 
@@ -11,6 +11,7 @@ Files in this directory:
 | `img-bed.service` | `/etc/systemd/system/img-bed.service` |
 | `img-bed.toml` | `/etc/img-bed/img-bed.toml` |
 | `nginx-img-bed.conf` | `/etc/nginx/sites-available/img.aka.cy` (or `conf.d/img.aka.cy.conf`) |
+| `apache-img-bed.conf` | `/etc/apache2/sites-available/img.aka.cy.conf`, if the server runs Apache instead of nginx |
 
 Layout on the server:
 
@@ -101,7 +102,18 @@ install -m 0644 img-bed-$V-$ARCH-linux-musl/nginx-img-bed.conf /etc/nginx/sites-
 ln -sfn /etc/nginx/sites-available/img.aka.cy /etc/nginx/sites-enabled/img.aka.cy
 #    Edit the ssl_certificate lines to match the existing certificate.
 nginx -t && systemctl reload nginx
+
+# 7'. Or Apache instead of nginx: replace the old Lsky Pro virtual host, then:
+a2enmod ssl proxy proxy_http headers rewrite
+install -m 0644 img-bed-$V-$ARCH-linux-musl/apache-img-bed.conf /etc/apache2/sites-available/img.aka.cy.conf
+a2ensite img.aka.cy
+#    Edit the SSLCertificate* lines to match the existing certificate.
+apachectl configtest && systemctl reload apache2
 ```
+
+With Apache, `LimitRequestBody` plays the role of `client_max_body_size` (in
+bytes: upload limit + 1 MiB), and `ProxyPass` must keep `nocanon` so
+percent-encoded Paths reach img-bed unchanged.
 
 Then open `https://img.aka.cy/admin/`, log in and upload an image.
 

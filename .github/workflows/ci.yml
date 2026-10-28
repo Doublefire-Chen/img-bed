@@ -102,7 +102,7 @@ jobs:
             name="img-bed-$v-$arch-linux-musl"
             mkdir "$name"
             cp "server/target/$arch-unknown-linux-musl/release/img-bed" "$name/"
-            cp deploy/img-bed.service deploy/img-bed.toml deploy/nginx-img-bed.conf deploy/README.md LICENSE "$name/"
+            cp deploy/img-bed.service deploy/img-bed.toml deploy/nginx-img-bed.conf deploy/apache-img-bed.conf deploy/README.md LICENSE "$name/"
             tar --owner=0 --group=0 -czf "dist/$name.tar.gz" "$name"
           done
           # Unpacks to web/ (index.html at web/index.html).

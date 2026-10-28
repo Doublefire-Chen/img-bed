@@ -173,5 +173,11 @@ mod tests {
         assert!(nginx.contains(&body), "nginx sample lacks {body:?}");
         let listen = format!("server {};", c.listen);
         assert!(nginx.contains(&listen), "nginx sample lacks {listen:?}");
+
+        let apache = include_str!("../../deploy/apache-img-bed.conf");
+        let body = format!("LimitRequestBody {}\n", c.upload_limit_bytes + 1024 * 1024);
+        assert!(apache.contains(&body), "apache sample lacks {body:?}");
+        let proxy = format!("ProxyPass        / http://{}/ nocanon\n", c.listen);
+        assert!(apache.contains(&proxy), "apache sample lacks {proxy:?}");
     }
 }
