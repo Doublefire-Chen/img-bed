@@ -1,6 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { type ChangeEvent, type DragEvent, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api, LIBRARY_KEY, type Uploaded, isUnauthorized } from "../api";
+import { CopyAllButtons } from "../components/CopyAllButtons";
 import { CopyButtons } from "../components/CopyButtons";
 import { formatDate, formatDateTime, formatSize, previewSrc } from "../format";
 import { SESSION_KEY } from "../session";
@@ -118,6 +119,12 @@ export function UploadPage() {
   };
 
   const finished = items.filter((i) => i.status === "done" || i.status === "error").length;
+  // Every stored file (new, Duplicate Upload or restored) so far, in the order
+  // added rather than the newest-first order shown; keys count up as files are added.
+  const stored = items
+    .flatMap((i) => (i.status === "done" ? [i] : []))
+    .sort((a, b) => a.key - b.key)
+    .map((i) => ({ url: i.result.image.url, filename: i.result.image.original_filename }));
 
   return (
     <section>
@@ -163,6 +170,9 @@ export function UploadPage() {
               </button>
             )}
           </div>
+          {stored.length >= 2 && (
+            <CopyAllButtons label={`Copy all ${stored.length} links:`} items={stored} />
+          )}
           <ul className="results">
             {items.map((item) => (
               <li

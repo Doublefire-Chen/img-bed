@@ -262,6 +262,11 @@ a:focus-visible {
   margin: 0;
 }
 
+/* "Copy all N links" row between the results header and the results. */
+.results-header + .copy-all {
+  margin-bottom: 0.75rem;
+}
+
 .results {
   list-style: none;
   margin: 0;

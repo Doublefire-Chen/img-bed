@@ -42,6 +42,17 @@ export function formatLink(format: LinkFormat, url: string, alt = ""): string {
   }
 }
 
+/** An Image to link to: its Primary Path URL and original filename (for alt text). */
+export interface LinkItem {
+  url: string;
+  filename?: string | null;
+}
+
+/** The snippets of several Images in the given order, one per line. */
+export function formatLinks(format: LinkFormat, items: readonly LinkItem[]): string {
+  return items.map((item) => formatLink(format, item.url, altText(item.filename))).join("\n");
+}
+
 /** Copies text, falling back to a hidden textarea where the Clipboard API is unavailable (plain http). */
 export async function copyText(text: string): Promise<void> {
   if (navigator.clipboard && window.isSecureContext) {

@@ -2,6 +2,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { useEffect, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router";
 import { api, LIBRARY_KEY } from "../api";
+import { CopyAllButtons } from "../components/CopyAllButtons";
 import { DeleteConfirm } from "../components/DeleteConfirm";
 import { formatDate, formatDateTime, formatSize, previewSrc } from "../format";
 
@@ -14,7 +15,7 @@ const SEARCH_DELAY_MS = 250;
  * The Library: every Image (not in the Trash), newest first, in pages, with a
  * search by Path or original filename. The page and search live in the URL,
  * so coming back from an Image keeps the place. Images on the page can be
- * selected and deleted (moved to the Trash) together.
+ * selected to copy their links or delete them (move to the Trash) together.
  */
 export function LibraryPage() {
   const [params, setParams] = useSearchParams();
@@ -128,7 +129,7 @@ export function LibraryPage() {
       {data && data.images.length > 0 && (
         <div className="selection-bar">
           <span className="muted small">
-            {selected.size > 0 ? `${selected.size} selected` : "Select Images to delete several at once"}
+            {selected.size > 0 ? `${selected.size} selected` : "Select Images to copy links of or delete several at once"}
           </span>
           <button
             type="button"
@@ -150,6 +151,11 @@ export function LibraryPage() {
               >
                 Clear
               </button>
+              {/* Primary Path links of the selection, in the order shown (newest first). */}
+              <CopyAllButtons
+                label="Copy links:"
+                items={selectedImages.map((image) => ({ url: image.url, filename: image.original_filename }))}
+              />
               <button
                 type="button"
                 className="button-small button-danger"
