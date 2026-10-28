@@ -100,7 +100,6 @@ async fn unknown_paths_are_404() {
         .collect();
     for unknown in [
         "/nope.png".to_owned(),
-        "/".to_owned(),
         format!("/{flipped}"), // Paths are case-sensitive
         format!("/{path}/"),
         format!("/x/{path}"),

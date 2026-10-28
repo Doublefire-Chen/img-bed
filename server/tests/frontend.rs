@@ -23,6 +23,14 @@ async fn admin_without_trailing_slash_redirects() {
 }
 
 #[tokio::test]
+async fn site_root_redirects_to_admin() {
+    let app = TestApp::new().await;
+    let res = app.get("/").await;
+    assert_eq!(res.status, StatusCode::TEMPORARY_REDIRECT);
+    assert_eq!(res.header("location"), Some("/admin/"));
+}
+
+#[tokio::test]
 async fn admin_serves_files_from_frontend_dir() {
     let app = TestApp::new().await;
     let res = app.get("/admin/assets/app.js").await;

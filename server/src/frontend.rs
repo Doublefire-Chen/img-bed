@@ -24,6 +24,9 @@ pub fn router(frontend_dir: &Path) -> Router<AppState> {
     let files = ServeDir::new(frontend_dir).fallback(index);
     let serve = move |req: Request| serve_file(files.clone(), req);
     Router::new()
+        // The site root is never a Path (Paths are non-empty); send people to
+        // the admin area. Temporary, so the root stays free for later use.
+        .route("/", get(|| async { Redirect::temporary("/admin/") }))
         .route(PREFIX, get(|| async { Redirect::permanent("/admin/") }))
         .route("/admin/", get(serve.clone()).head(serve.clone()))
         .route("/admin/{*path}", get(serve.clone()).head(serve))

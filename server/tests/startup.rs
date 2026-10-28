@@ -37,5 +37,4 @@ async fn info_reports_server_version_without_a_session() {
 async fn paths_outside_reserved_prefixes_are_404_for_now() {
     let app = TestApp::new().await;
     assert_eq!(app.get("/k3J9xQ.png").await.status, StatusCode::NOT_FOUND);
-    assert_eq!(app.get("/").await.status, StatusCode::NOT_FOUND);
 }
