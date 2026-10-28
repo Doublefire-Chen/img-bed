@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
-import { copyText, formatLink, LINK_FORMATS, type LinkFormat } from "../links";
+import { altText, copyText, formatLink, LINK_FORMATS, type LinkFormat } from "../links";
 
-/** One button per link format; shows "Copied" briefly after a click. */
-export function CopyButtons({ url }: { url: string }) {
+/**
+ * One button per link format; shows "Copied" briefly after a click. The
+ * Markdown and HTML snippets use the original filename as alt text.
+ */
+export function CopyButtons({ url, filename }: { url: string; filename?: string | null }) {
+  const alt = altText(filename);
   const [copied, setCopied] = useState<LinkFormat | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -14,7 +18,7 @@ export function CopyButtons({ url }: { url: string }) {
 
   const copy = async (format: LinkFormat) => {
     try {
-      await copyText(formatLink(format, url));
+      await copyText(formatLink(format, url, alt));
       setFailed(false);
       setCopied(format);
     } catch {
@@ -29,7 +33,7 @@ export function CopyButtons({ url }: { url: string }) {
           key={format}
           type="button"
           className="button-small"
-          title={formatLink(format, url)}
+          title={formatLink(format, url, alt)}
           onClick={() => void copy(format)}
         >
           {copied === format ? "Copied" : label}

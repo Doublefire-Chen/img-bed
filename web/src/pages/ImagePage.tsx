@@ -263,7 +263,7 @@ function PathsSection({ image, readOnly }: { image: Image; readOnly: boolean }) 
       {adding && !readOnly && <AddPathForm image={image} onDone={() => setAdding(false)} />}
       <ul className="path-links">
         {image.paths.map((p) => (
-          <PathRow key={p.path} imageId={image.id} path={p} onlyOne={onlyOne} readOnly={readOnly} />
+          <PathRow key={p.path} imageId={image.id} filename={image.original_filename} path={p} onlyOne={onlyOne} readOnly={readOnly} />
         ))}
       </ul>
     </section>
@@ -376,11 +376,13 @@ function capitalize(text: string): string {
 
 function PathRow({
   imageId,
+  filename,
   path,
   onlyOne,
   readOnly,
 }: {
   imageId: number;
+  filename: string;
   path: ImagePath;
   onlyOne: boolean;
   readOnly: boolean;
@@ -476,7 +478,7 @@ function PathRow({
         aria-label={`URL of /${path.path}`}
         onFocus={(e) => e.target.select()}
       />
-      <CopyButtons url={path.url} />
+      <CopyButtons url={path.url} filename={filename} />
     </li>
   );
 }

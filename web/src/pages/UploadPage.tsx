@@ -239,7 +239,7 @@ function UploadedLinks({ name, result }: { name: string; result: Uploaded }) {
               aria-label={`URL of ${name}${shown.length > 1 ? ` at /${p.path}` : ""}`}
               onFocus={(e) => e.target.select()}
             />
-            <CopyButtons url={p.url} />
+            <CopyButtons url={p.url} filename={image.original_filename} />
           </li>
         ))}
       </ul>

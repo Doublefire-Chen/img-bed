@@ -13,15 +13,30 @@ function escapeAttribute(value: string): string {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
-/** `url` as plain text, `![](url)`, `<img src="url">` or `[img]url[/img]`. */
-export function formatLink(format: LinkFormat, url: string): string {
+function escapeMarkdownAlt(value: string): string {
+  return value.replace(/[\\[\]]/g, "\\$&");
+}
+
+/**
+ * Alt text from an Image's original filename: the name without its extension,
+ * or "" when that says nothing (no name, or a browser's generic "image").
+ */
+export function altText(originalFilename: string | null | undefined): string {
+  const name = (originalFilename ?? "").trim().replace(/\.[^./\\]+$/, "").trim();
+  return name.toLowerCase() === "image" ? "" : name;
+}
+
+/** `url` as plain text, `![alt](url)`, `<img src="url" alt="alt">` or `[img]url[/img]`. */
+export function formatLink(format: LinkFormat, url: string, alt = ""): string {
   switch (format) {
     case "url":
       return url;
     case "markdown":
-      return `![](${url})`;
+      return `![${escapeMarkdownAlt(alt)}](${url})`;
     case "html":
-      return `<img src="${escapeAttribute(url)}">`;
+      return alt
+        ? `<img src="${escapeAttribute(url)}" alt="${escapeAttribute(alt)}">`
+        : `<img src="${escapeAttribute(url)}">`;
     case "bbcode":
       return `[img]${url}[/img]`;
   }
